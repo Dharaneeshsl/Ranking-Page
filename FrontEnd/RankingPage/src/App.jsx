@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import { Container, Form, Button, Table, Row, Col } from 'react-bootstrap';
+import { Container, Form, Button, Table, Row, Col, Modal } from 'react-bootstrap';
 
 const App = () => {
-  const [leaderboard, setLeaderboard] = useState([]);
+  const [leaderboard, setLeaderboard] = useState({ leaderboard: [] });
   const [name, setName] = useState('');
   const [action, setAction] = useState('attend_event');
   const [startDate, setStartDate] = useState('2025-01-01');
   const [endDate, setEndDate] = useState('2025-12-31');
+  const [editingMember, setEditingMember] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editPoints, setEditPoints] = useState(0);
 
   useEffect(() => {
     fetchLeaderboard();
@@ -16,15 +19,15 @@ const App = () => {
 
   const fetchLeaderboard = async () => {
     try {
-      const res = await axios.get(`http://localhost:5173/leaderboard?start_date=${startDate}&end_date=${endDate}`);
+      const res = await axios.get(`http://localhost:8000/api/leaderboard?start_date=${startDate}&end_date=${endDate}`);
       if (res.data.status === "success") {
-        setLeaderboard(res.data.data || []);
+        setLeaderboard(res.data.data || { leaderboard: [] });
       } else {
-        setLeaderboard([{ name: "Error", period_points: 0, total_points: 0, badge: "N/A" }]);
+        setLeaderboard({ leaderboard: [{ name: "Error", total_points: 0, level: "N/A", badges: [] }] });
       }
     } catch (err) {
       console.error("Fetch error:", err);
-      setLeaderboard([{ name: "Server Error", period_points: 0, total_points: 0, badge: "N/A" }]);
+      setLeaderboard({ leaderboard: [{ name: "Server Error", total_points: 0, level: "N/A", badges: [] }] });
     }
   };
 
@@ -34,16 +37,59 @@ const App = () => {
       return;
     }
     try {
-      const res = await axios.post('http://localhost:5173/add_points', { name: name.trim(), action });
+      const res = await axios.post('http://localhost:8000/api/points', { name: name.trim(), action });
       if (res.data.status === "success") {
-        setName('');
         fetchLeaderboard();
+        setName('');
       } else {
         alert("Add failed: " + res.data.message);
       }
     } catch (err) {
       console.error("Add error:", err);
       alert("Add failed: Check server.");
+    }
+  };
+
+  const handleEdit = (member) => {
+    setEditingMember(member);
+    setEditPoints(member.total_points);
+    setShowEditModal(true);
+  };
+
+  const handleUpdatePoints = async () => {
+    if (!editingMember) return;
+    
+    try {
+      const res = await axios.put(`http://localhost:8000/api/members/${editingMember.member_id}`, {
+        points: parseInt(editPoints)
+      });
+      
+      if (res.data.status === "success") {
+        setShowEditModal(false);
+        fetchLeaderboard();
+      } else {
+        alert("Update failed: " + res.data.message);
+      }
+    } catch (err) {
+      console.error("Update error:", err);
+      alert("Update failed: Check server.");
+    }
+  };
+
+  const handleDelete = async (memberId) => {
+    if (!window.confirm("Are you sure you want to delete this member?")) return;
+    
+    try {
+      const res = await axios.delete(`http://localhost:8000/api/members/${memberId}`);
+      
+      if (res.data.status === "success") {
+        fetchLeaderboard();
+      } else {
+        alert("Delete failed: " + res.data.message);
+      }
+    } catch (err) {
+      console.error("Delete error:", err);
+      alert("Delete failed: Check server.");
     }
   };
 
@@ -93,26 +139,103 @@ const App = () => {
           <tr>
             <th>Rank</th>
             <th>Name</th>
-            <th>Period Points</th>
-            <th>Badge (Total Points)</th>
+            <th>Total Points</th>
+            <th>Level</th>
+            <th>Badges</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {leaderboard.length > 0 ? (
-            leaderboard.map((entry, index) => (
-              <tr key={index}>
-                <td>{index + 1}</td>
-                <td>{entry.name}</td>
-                <td>{entry.period_points || 0}</td>
-                <td>{entry.badge} ({entry.total_points || 0})</td>
+          {leaderboard.leaderboard && leaderboard.leaderboard.length > 0 ? (
+            leaderboard.leaderboard.map((member, index) => (
+              <tr key={member.member_id || index}>
+                <td>{member.rank || index + 1}</td>
+                <td>{member.name}</td>
+                <td>{member.total_points || 0}</td>
+                <td>{member.level || 'Bronze Member'}</td>
+                <td>{member.badges ? member.badges.join(', ') : 'Bronze Member'}</td>
+                <td>
+                  <Button variant="warning" size="sm" onClick={() => handleEdit(member)} className="me-2">
+                    Edit
+                  </Button>
+                  <Button variant="danger" size="sm" onClick={() => handleDelete(member.member_id)}>
+                    Delete
+                  </Button>
+                </td>
               </tr>
             ))
           ) : (
-            <tr><td colSpan="4" className="text-center">No members yet. Add some!</td></tr>
+            <tr><td colSpan="6" className="text-center">No members yet. Add some!</td></tr>
           )}
         </tbody>
       </Table>
+
+      {/* Edit Points Modal */}
+      <Modal show={showEditModal} onHide={() => setShowEditModal(false)}>
+        <Modal.Header closeButton>
+          <Modal.Title>Edit Points</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {editingMember && (
+            <Form>
+              <Form.Group className="mb-3">
+                <Form.Label>Member Name</Form.Label>
+                <Form.Control type="text" value={editingMember?.name || ''} disabled />
+              </Form.Group>
+              <Form.Group className="mb-3">
+                <Form.Label>Points</Form.Label>
+                <Form.Control 
+                  type="number" 
+                  value={editPoints} 
+                  onChange={(e) => setEditPoints(e.target.value)}
+                />
+              </Form.Group>
+            </Form>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowEditModal(false)}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={handleUpdatePoints}>
+            Save Changes
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </Container>
+
+    {/* Edit Points Modal */}
+    <Modal show={showEditModal} onHide={() => setShowEditModal(false)}>
+      <Modal.Header closeButton>
+        <Modal.Title>Edit Points</Modal.Title>
+      </Modal.Header>
+      <Modal.Body>
+        {editingMember && (
+          <Form>
+            <Form.Group className="mb-3">
+              <Form.Label>Member Name</Form.Label>
+              <Form.Control type="text" value={editingMember?.name || ''} disabled />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Points</Form.Label>
+              <Form.Control 
+                type="number" 
+                value={editPoints} 
+                onChange={(e) => setEditPoints(e.target.value)}
+              />
+            </Form.Group>
+          </Form>
+        )}
+      </Modal.Body>
+      <Modal.Footer>
+        <Button variant="secondary" onClick={() => setShowEditModal(false)}>
+          Cancel
+        </Button>
+        <Button variant="primary" onClick={handleUpdatePoints}>
+          Save Changes
+        </Button>
+      </Modal.Footer>
+    </Modal>
   );
 };
 

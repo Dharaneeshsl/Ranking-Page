@@ -15,7 +15,7 @@ app = FastAPI(title="Gamified Ranking API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -384,6 +384,115 @@ async def get_member_profile(member_id: str):
     except Exception as e:
         logger.error(f"Error fetching member profile: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch member profile")
+
+@app.put("/api/members/{member_id}", response_model=MemberResponse)
+async def update_member(member_id: str, member_update: MemberUpdate):
+    """
+    Update a member's information
+    """
+    try:
+        # Convert string ID to ObjectId
+        obj_id = ObjectId(member_id)
+        
+        # Prepare update data
+        update_data = member_update.dict(exclude_unset=True)
+        update_data["last_active"] = datetime.now().strftime("%Y-%m-%d")
+        
+        # Update the member
+        result = await members_collection.update_one(
+            {"_id": obj_id},
+            {"$set": update_data}
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Member not found")
+            
+        # Get updated member
+        member = await members_collection.find_one({"_id": obj_id})
+        member["id"] = str(member["_id"])
+        
+        # Calculate rank
+        member["rank"] = await get_member_rank(member["points"])
+        member["next_level_points"] = calculate_next_level_points(member["level"])
+        
+        return member
+        
+    except Exception as e:
+        logger.error(f"Error updating member: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.put("/api/members/{member_id}/points")
+async def update_member_points(member_id: str, points: int):
+    """
+    Update a member's points directly
+    """
+    try:
+        obj_id = ObjectId(member_id)
+        
+        # Update points
+        result = await members_collection.update_one(
+            {"_id": obj_id},
+            {
+                "$set": {
+                    "points": points,
+                    "last_active": datetime.now().strftime("%Y-%m-%d")
+                }
+            }
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Member not found")
+            
+        # Get updated member
+        member = await members_collection.find_one({"_id": obj_id})
+        
+        # Update level and badges based on new points
+        badges = get_badges(points, member.get("contributions", []))
+        level = BadgeType.BRONZE.value
+        
+        if points >= 1000:
+            level = BadgeType.PLATINUM.value
+        elif points >= 500:
+            level = BadgeType.GOLD.value
+        elif points >= 100:
+            level = BadgeType.SILVER.value
+            
+        # Update level and badges
+        await members_collection.update_one(
+            {"_id": obj_id},
+            {
+                "$set": {
+                    "level": level,
+                    "badges": list(set(badges + [level]))  # Ensure no duplicates
+                }
+            }
+        )
+        
+        return {"status": "success", "message": "Points updated successfully"}
+        
+    except Exception as e:
+        logger.error(f"Error updating points: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/api/members/{member_id}")
+async def delete_member(member_id: str):
+    """
+    Delete a member
+    """
+    try:
+        obj_id = ObjectId(member_id)
+        
+        # Delete the member
+        result = await members_collection.delete_one({"_id": obj_id})
+        
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Member not found")
+            
+        return {"status": "success", "message": "Member deleted successfully"}
+        
+    except Exception as e:
+        logger.error(f"Error deleting member: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
