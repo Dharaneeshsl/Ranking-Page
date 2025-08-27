@@ -25,6 +25,17 @@ client = AsyncIOMotorClient("mongodb://localhost:27017")
 db = client.club_db
 members_collection = db.members
 
+# Create indexes
+async def create_indexes():
+    await members_collection.create_index([("points", -1)])  # For leaderboard/ranking
+    await members_collection.create_index([("email", 1)], unique=True, sparse=True)
+    await members_collection.create_index([("name", 1), ("email", 1)], unique=True, sparse=True)
+
+# Run on startup
+@app.on_event("startup")
+async def startup_db_client():
+    await create_indexes()
+
 class ActionType(str, Enum):
     ATTEND_EVENT = "attend_event"
     VOLUNTEER_TASK = "volunteer_task"
@@ -59,21 +70,21 @@ BADGE_THRESHOLDS = {
     BadgeType.SPONSORSHIP_CHAMPION: 3
 }
 
+def compute_level(points: int) -> str:
+    """Calculate member level based on points"""
+    if points >= BADGE_THRESHOLDS[BadgeType.PLATINUM]:
+        return BadgeType.PLATINUM.value
+    if points >= BADGE_THRESHOLDS[BadgeType.GOLD]:
+        return BadgeType.GOLD.value
+    if points >= BADGE_THRESHOLDS[BadgeType.SILVER]:
+        return BadgeType.SILVER.value
+    return BadgeType.BRONZE.value
+
 def get_badges(points: int, contributions: List[Dict[str, Any]]) -> List[str]:
     """Calculate badges based on points and contributions"""
-    badges = []
+    badges = [compute_level(points)]  # Level badge based on points
     
-
-    if points >= BADGE_THRESHOLDS[BadgeType.PLATINUM]:
-        badges.append(BadgeType.PLATINUM.value)
-    elif points >= BADGE_THRESHOLDS[BadgeType.GOLD]:
-        badges.append(BadgeType.GOLD.value)
-    elif points >= BADGE_THRESHOLDS[BadgeType.SILVER]:
-        badges.append(BadgeType.SILVER.value)
-    else:
-        badges.append(BadgeType.BRONZE.value)
-    
-   
+    # Add special badges based on contributions
     if contributions:
         event_lead_count = sum(1 for c in contributions if c.get("action") == ActionType.LEAD_EVENT)
         sponsorship_count = sum(1 for c in contributions if c.get("action") == ActionType.BRING_SPONSORSHIP)
@@ -83,7 +94,9 @@ def get_badges(points: int, contributions: List[Dict[str, Any]]) -> List[str]:
         if sponsorship_count >= BADGE_THRESHOLDS[BadgeType.SPONSORSHIP_CHAMPION]:
             badges.append(BadgeType.SPONSORSHIP_CHAMPION.value)
     
-    return badges
+    # Ensure unique badges while preserving order
+    seen = set()
+    return [badge for badge in badges if not (badge in seen or seen.add(badge))]
 
 class ContributionBase(BaseModel):
     action: ActionType
@@ -97,10 +110,16 @@ class MemberBase(BaseModel):
     email: Optional[EmailStr] = None
     points: int = 0
     level: str = BadgeType.BRONZE.value
-    join_date: str = Field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d"))
-    last_active: str = Field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d"))
+    join_date: datetime = Field(default_factory=datetime.utcnow)
+    last_active: datetime = Field(default_factory=datetime.utcnow)
     contributions: List[Dict[str, Any]] = []
     badges: List[str] = Field(default_factory=lambda: [BadgeType.BRONZE.value])
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat(),
+            ObjectId: str
+        }
 
 class MemberCreate(MemberBase):
     pass
@@ -114,10 +133,14 @@ class MemberResponse(MemberBase):
     rank: Optional[int] = None
     next_level_points: Optional[int] = None
     progress: Optional[float] = None
-
-    class Config:
+    
+    class Config(MemberBase.Config):
         from_attributes = True
-        json_encoders = {ObjectId: str}
+        json_encoders = {
+            **MemberBase.Config.json_encoders,
+            "_id": str,  # Ensure ObjectId is converted to string in response
+            ObjectId: str  # For direct ObjectId serialization
+        }
 
 class AddPointsRequest(BaseModel):
     name: str
@@ -127,10 +150,15 @@ class AddPointsRequest(BaseModel):
     event_name: Optional[str] = None
     date: str = Field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d"))
 
-async def get_member_rank(points: int) -> int:
+async def get_member_rank(points: int):
     """Get member's current rank based on points"""
-    count = await members_collection.count_documents({"points": {"$gt": points}})
-    return count + 1
+    try:
+        # Count how many members have more points than the given points
+        count = await members_collection.count_documents({"points": {"$gt": points}})
+        return count + 1  # Rank is count + 1 (1-based)
+    except Exception as e:
+        logger.error(f"Error getting member rank: {str(e)}")
+        return 1
 
 def calculate_next_level_points(current_level: str) -> int:
     """Calculate points needed for next level"""
@@ -144,81 +172,88 @@ def calculate_next_level_points(current_level: str) -> int:
 
 @app.post("/api/points")
 async def add_points(request: AddPointsRequest):
-    """Add points for a member's contribution"""
+    """Add points for a member's contribution (atomic operation)"""
+    now = datetime.utcnow()
+    points = POINTS_MAP.get(request.action, 0)
+    
+    if points <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid points value"
+        )
+    
+    # Create a query that matches by name and email (if provided)
+    member_query = {"name": request.name.strip()}
+    if request.email:
+        member_query["email"] = request.email
+    
+    # Create the contribution record
+    contribution = {
+        "action": request.action.value,  # Store as string
+        "points": points,
+        "description": request.description,
+        "event_name": request.event_name,
+        "date": now,
+        "timestamp": now
+    }
+    
     try:
-        if not request.name.strip():
-            raise HTTPException(status_code=400, detail="Name is required")
+        # Atomic find and update with upsert
+        result = await members_collection.find_one_and_update(
+            member_query,
+            {
+                "$setOnInsert": {
+                    "name": request.name.strip(),
+                    "email": request.email,
+                    "points": 0,
+                    "level": BadgeType.BRONZE.value,
+                    "join_date": now,
+                    "contributions": [],
+                    "badges": [BadgeType.BRONZE.value]
+                },
+                "$inc": {"points": points},
+                "$push": {"contributions": contribution},
+                "$set": {"last_active": now}
+            },
+            upsert=True,
+            return_document=True
+        )
         
-        points = POINTS_MAP[request.action]
-        now = datetime.now().strftime("%Y-%m-%d")
+        # Get current points after update
+        current_points = result["points"]
         
-        contribution = {
-            "action": request.action,
-            "points": points,
-            "date": request.date or now,
-            "description": request.description,
-            "event_name": request.event_name
-        }
+        # Calculate new level and badges
+        new_level = compute_level(current_points)
+        badges = get_badges(current_points, result.get("contributions", []) + [contribution])
         
-     
-        member_query = {"name": request.name.strip()}
-        if request.email:
-            member_query["email"] = request.email
-            
-        member = await members_collection.find_one(member_query)
-        
-        if member:
-            updated_points = member.get("points", 0) + points
-            updated_contributions = member.get("contributions", []) + [contribution]
-            badges = get_badges(updated_points, updated_contributions)
-            
-            update_data = {
-                "$set": {
-                    "points": updated_points,
-                    "contributions": updated_contributions,
-                    "last_active": now,
-                    "badges": badges,
-                    "level": max(badges, key=lambda b: BADGE_THRESHOLDS.get(BadgeType(b), 0))
-                }
-            }
-            
-            if request.email and not member.get("email"):
-                update_data["$set"]["email"] = request.email
-            
+        # Update level and badges if needed
+        if new_level != result.get("level") or set(badges) != set(result.get("badges", [])):
             await members_collection.update_one(
-                {"_id": member["_id"]},
-                update_data
+                {"_id": result["_id"]},
+                {"$set": {"level": new_level, "badges": badges}}
             )
-            member_id = str(member["_id"])
-        else:
-            new_member = {
-                "name": request.name.strip(),
-                "email": request.email,
-                "points": points,
-                "level": BadgeType.BRONZE.value,
-                "join_date": now,
-                "last_active": now,
-                "contributions": [contribution],
-                "badges": [BadgeType.BRONZE.value]
-            }
-            result = await members_collection.insert_one(new_member)
-            member_id = str(result.inserted_id)
+        
+        # Get rank for the member
+        rank = await get_member_rank(current_points)
         
         return {
             "status": "success",
             "data": {
-                "member_id": member_id,
-                "points_added": points,
-                "total_points": updated_points if 'updated_points' in locals() else points,
-                "badges": badges if 'badges' in locals() else [BadgeType.BRONZE.value]
+                "id": str(result["_id"]),
+                "name": result["name"],
+                "points": current_points,
+                "level": new_level,
+                "badges": badges,
+                "rank": rank
             }
         }
         
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Error adding points: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to add points")
+        logger.error(f"Error in add_points: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing request: {str(e)}"
+        )
 
 @app.get("/api/leaderboard")
 async def get_leaderboard(
@@ -227,167 +262,289 @@ async def get_leaderboard(
     end_date: Optional[str] = None,
     limit: int = 100
 ):
-    """Get leaderboard with optional time-based filtering"""
+    """
+    Get leaderboard with optional time-based filtering
+    
+    Args:
+        time_frame: One of 'all', 'week', 'month', 'year', or 'custom'
+        start_date: Required if time_frame is 'custom', format: YYYY-MM-DD
+        end_date: Required if time_frame is 'custom', format: YYYY-MM-DD
+        limit: Maximum number of members to return (default: 100)
+    """
     try:
-        now = datetime.now()
+        # Set date range based on time_frame
+        now = datetime.utcnow()
         date_filter = {}
         
         if time_frame == "week":
-            start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
-            end = (now + timedelta(days=6-now.weekday())).strftime("%Y-%m-%d")
+            start = now - timedelta(weeks=1)
+            date_filter = {"contributions.timestamp": {"$gte": start}}
         elif time_frame == "month":
-            start = now.replace(day=1).strftime("%Y-%m-%d")
-            next_month = now.replace(day=28) + timedelta(days=4)
-            end = (next_month - timedelta(days=next_month.day)).strftime("%Y-%m-%d")
+            start = now - timedelta(days=30)
+            date_filter = {"contributions.timestamp": {"$gte": start}}
         elif time_frame == "year":
-            start = now.replace(month=1, day=1).strftime("%Y-%m-%d")
-            end = now.replace(month=12, day=31).strftime("%Y-%m-%d")
-        elif time_frame == "custom" and start_date and end_date:
-            start, end = start_date, end_date
-        else:  
-            start, end = "1970-01-01", "2100-12-31"
+            start = now - timedelta(days=365)
+            date_filter = {"contributions.timestamp": {"$gte": start}}
+        elif time_frame == "custom":
+            if not start_date or not end_date:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Both start_date and end_date are required for custom time frame"
+                )
+            try:
+                start = datetime.strptime(start_date, "%Y-%m-%d")
+                end = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)  # Include full end day
+                date_filter = {"contributions.timestamp": {"$gte": start, "$lte": end}}
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid date format. Use YYYY-MM-DD"
+                )
         
-
-        members = await members_collection.find({}).sort("points", -1).limit(limit).to_list(length=None)
-        
-        leaderboard = []
-        for i, member in enumerate(members, 1):
-            
+        # Get all members
+        members = []
+        async for member in members_collection.find():
+            # Filter contributions by date if needed
             contributions = member.get("contributions", [])
-            filtered_contributions = [
-                c for c in contributions 
-                if start <= c.get("date", "") <= end
-            ]
+            if date_filter:
+                start = date_filter["contributions.timestamp"].get("$gte", datetime.min)
+                end = date_filter["contributions.timestamp"].get("$lte", datetime.max)
+                contributions = [
+                    c for c in contributions 
+                    if start <= c.get("timestamp", datetime.min) <= end
+                ]
             
-            period_points = sum(c["points"] for c in filtered_contributions)
+            # Calculate total points for the filtered contributions
+            points = sum(c.get("points", 0) for c in contributions)
             
-            leaderboard.append({
-                "rank": i,
-                "member_id": str(member["_id"]),
-                "name": member["name"],
-                "email": member.get("email"),
-                "period_points": period_points,
-                "total_points": member.get("points", 0),
-                "level": member.get("level", BadgeType.BRONZE.value),
-                "badges": member.get("badges", [BadgeType.BRONZE.value]),
-                "join_date": member.get("join_date", ""),
-                "last_active": member.get("last_active", "")
-            })
+            # Only include members with points in the selected time frame
+            if points > 0:
+                members.append({
+                    "id": str(member["_id"]),
+                    "name": member["name"],
+                    "points": points,
+                    "level": compute_level(points),  # Recompute level based on filtered points
+                    "badges": get_badges(points, contributions)  # Recompute badges based on filtered contributions
+                })
         
-      
-        leaderboard.sort(key=lambda x: x["period_points"], reverse=True)
+        # Sort by points descending and limit results
+        members.sort(key=lambda x: x["points"], reverse=True)
         
+        # Calculate top 5% for Top Contributor badge
+        if members:
+            total_points = sum(m["points"] for m in members)
+            if total_points > 0:
+                top_5_percent_index = max(1, len(members) // 20)  # Top 5% or at least 1
+                top_5_percent_points = members[top_5_percent_index - 1]["points"]
+                
+                # Update badges for top contributors
+                for member in members:
+                    if member["points"] >= top_5_percent_points and \
+                       BadgeType.TOP_CONTRIBUTOR.value not in member["badges"]:
+                        member["badges"].append(BadgeType.TOP_CONTRIBUTOR.value)
+                    elif member["points"] < top_5_percent_points and \
+                         BadgeType.TOP_CONTRIBUTOR.value in member["badges"]:
+                        member["badges"].remove(BadgeType.TOP_CONTRIBUTOR.value)
         
-        for i, entry in enumerate(leaderboard, 1):
-            entry["rank"] = i
+        # Limit results after all processing
+        members = members[:limit]
+        
+        # Calculate ranks
+        for i, member in enumerate(members, 1):
+            member["rank"] = i
         
         return {
             "status": "success",
             "data": {
-                "leaderboard": leaderboard,
-                "time_frame": {
-                    "type": time_frame,
-                    "start_date": start,
-                    "end_date": end
-                },
-                "total_members": len(leaderboard)
+                "leaderboard": members,
+                "time_frame": time_frame,
+                "start_date": start_date if time_frame == "custom" else None,
+                "end_date": end_date if time_frame == "custom" else None,
+                "total_members": len(members)
             }
         }
-        
-    except Exception as e:
-        logger.error(f"Error fetching leaderboard: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to fetch leaderboard")
-
-@app.get("/api/members/{member_id}")
-async def get_member_profile(member_id: str):
-    """Get detailed profile and contribution history for a member"""
-    try:
-       
-        try:
-            member_oid = ObjectId(member_id)
-        except:
-            raise HTTPException(status_code=400, detail="Invalid member ID format")
-        
-        member = await members_collection.find_one({"_id": member_oid})
-        if not member:
-            raise HTTPException(status_code=404, detail="Member not found")
-        
-        
-        rank = await get_member_rank(member.get("points", 0))
-        current_level = member.get("level", BadgeType.BRONZE.value)
-        next_level_points = calculate_next_level_points(current_level)
-        
-        progress = 0
-        if next_level_points:
-            current_points = member.get("points", 0)
-            previous_level_points = BADGE_THRESHOLDS.get(BadgeType(current_level), 0)
-            points_needed = next_level_points - previous_level_points
-            points_earned = current_points - previous_level_points
-            progress = min(100, int((points_earned / points_needed) * 100)) if points_needed > 0 else 100
-        
-        response = {
-            "member_id": str(member["_id"]),
-            "name": member["name"],
-            "email": member.get("email"),
-            "points": member.get("points", 0),
-            "level": current_level,
-            "rank": rank,
-            "badges": member.get("badges", [BadgeType.BRONZE.value]),
-            "join_date": member.get("join_date", ""),
-            "last_active": member.get("last_active", ""),
-            "next_level_points": next_level_points,
-            "progress_to_next_level": progress,
-            "total_contributions": len(member.get("contributions", [])),
-            "contributions_by_type": {},
-            "recent_contributions": []
-        }
-
-        contributions_by_type = {}
-        for action in ActionType:
-            contributions_by_type[action.value] = {
-                "count": 0,
-                "total_points": 0,
-                "points_per_action": POINTS_MAP[action]
-            }
-        
-        for contrib in member.get("contributions", []):
-            action = contrib.get("action")
-            if action in contributions_by_type:
-                contributions_by_type[action]["count"] += 1
-                contributions_by_type[action]["total_points"] += contrib.get("points", 0)
-        
-        response["contributions_by_type"] = contributions_by_type
-        
-
-        recent_contributions = sorted(
-            member.get("contributions", []),
-            key=lambda x: x.get("date", ""),
-            reverse=True
-        )[:10]
-        response["recent_contributions"] = recent_contributions
-        
-        return {"status": "success", "data": response}
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching member profile: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to fetch member profile")
+        logger.error(f"Error getting leaderboard: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting leaderboard: {str(e)}"
+        )
 
-@app.put("/api/members/{member_id}", response_model=MemberResponse)
+@app.get("/api/members/{member_id}")
+async def get_member_profile(member_id: str):
+    """
+    Get detailed profile and contribution history for a member
+    
+    Returns:
+        A dictionary containing member details, statistics, and recent contributions
+    """
+    try:
+        # Get member data
+        member = await members_collection.find_one({"_id": ObjectId(member_id)})
+        if not member:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Member not found"
+            )
+            
+        # Get member's rank
+        rank = await get_member_rank(member["points"])
+        
+        # Calculate points needed for next level
+        next_level_points = calculate_next_level_points(member["level"])
+        progress = 0
+        if next_level_points > 0:
+            progress = min(100, int((member["points"] / next_level_points) * 100))
+        
+        # Calculate contribution statistics
+        contributions = member.get("contributions", [])
+        contributions_by_type = {
+            action_type.value: {"count": 0, "total_points": 0}
+            for action_type in ActionType
+        }
+        
+        for contrib in contributions:
+            action = contrib.get("action")
+            # Handle both string and enum action types
+            action_str = action.value if isinstance(action, ActionType) else action
+            if action_str in contributions_by_type:
+                contributions_by_type[action_str]["count"] += 1
+                contributions_by_type[action_str]["total_points"] += contrib.get("points", 0)
+        
+        # Filter out action types with zero contributions
+        contributions_by_type = {
+            k: v for k, v in contributions_by_type.items() 
+            if v["count"] > 0
+        }
+        
+        # Get recent contributions (last 10)
+        recent_contributions = sorted(
+            contributions,
+            key=lambda x: x.get("timestamp", datetime.min),
+            reverse=True
+        )[:10]
+        
+        # Convert ObjectId to string for JSON serialization
+        for contrib in recent_contributions:
+            if "_id" in contrib:
+                contrib["id"] = str(contrib.pop("_id"))
+        
+        return {
+            "status": "success",
+            "data": {
+                "id": str(member["_id"]),
+                "name": member["name"],
+                "email": member.get("email"),
+                "points": member["points"],
+                "level": member["level"],
+                "badges": member.get("badges", []),
+                "rank": rank,
+                "next_level_points": next_level_points,
+                "progress": progress,
+                "join_date": member.get("join_date", datetime.utcnow()),
+                "last_active": member.get("last_active", datetime.utcnow()),
+                "total_contributions": len(contributions),
+                "contributions_by_type": contributions_by_type,
+                "recent_contributions": recent_contributions
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting member profile: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting member profile: {str(e)}"
+        )
+
+@app.post("/api/members", response_model=MemberResponse)
+async def create_member(member: MemberCreate):
+    """
+    Create a new member with initial setup including badges and timestamps
+    
+    Args:
+        member: MemberCreate object containing member details
+        
+    Returns:
+        Newly created member with system-generated fields
+    """
+    try:
+        # Check if member with same name or email already exists
+        existing_member = await members_collection.find_one({
+            "$or": [
+                {"name": member.name},
+                {"email": member.email}
+            ]
+        })
+        
+        if existing_member:
+            conflict_field = "name" if existing_member["name"] == member.name else "email"
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Member with this {conflict_field} already exists"
+            )
+        
+        # Prepare member data with proper timestamps
+        member_data = member.dict(exclude_unset=True)
+        now = datetime.utcnow()
+        
+        # Set system fields
+        member_data.update({
+            "join_date": now,
+            "last_active": now,
+            "badges": [BadgeType.BRONZE.value],
+            "contributions": [],
+            "level": BadgeType.BRONZE.value,
+            "points": 0
+        })
+        
+        # Insert new member
+        result = await members_collection.insert_one(member_data)
+        
+        # Get the created member with additional computed fields
+        created_member = await members_collection.find_one({"_id": result.inserted_id})
+        created_member["id"] = str(created_member["_id"])
+        created_member["rank"] = await get_member_rank(created_member["points"])
+        created_member["next_level_points"] = calculate_next_level_points(created_member["level"])
+        
+        # Calculate progress to next level
+        current_level = created_member["level"]
+        next_level_pts = created_member["next_level_points"]
+        progress = 0
+        if next_level_pts:
+            current_pts = created_member["points"]
+            prev_level_pts = BADGE_THRESHOLDS.get(BadgeType(current_level), 0)
+            points_earned = current_pts - prev_level_pts
+            points_needed = next_level_pts - prev_level_pts
+            progress = min(100, int((points_earned / points_needed) * 100)) if points_needed > 0 else 100
+        
+        created_member["progress"] = progress
+        
+        return created_member
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating member: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create member")
+
+@app.put("/api/members/{member_id}", response_model=dict)
 async def update_member(member_id: str, member_update: MemberUpdate):
     """
     Update a member's information
     """
     try:
-        
         obj_id = ObjectId(member_id)
-        
-       
+        member = await members_collection.find_one({"_id": obj_id})
+        if not member:
+            raise HTTPException(status_code=404, detail="Member not found")
         update_data = member_update.dict(exclude_unset=True)
-        update_data["last_active"] = datetime.now().strftime("%Y-%m-%d")
-        
-        
+        update_data["last_active"] = datetime.utcnow()
+   
         result = await members_collection.update_one(
             {"_id": obj_id},
             {"$set": update_data}
@@ -396,81 +553,117 @@ async def update_member(member_id: str, member_update: MemberUpdate):
         if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="Member not found")
             
-        member = await members_collection.find_one({"_id": obj_id})
-        member["id"] = str(member["_id"])
+        updated_member = await members_collection.find_one({"_id": obj_id})
+        updated_member["id"] = str(updated_member["_id"])
+        updated_member["rank"] = await get_member_rank(updated_member["points"])
+        updated_member["next_level_points"] = calculate_next_level_points(updated_member["level"])
         
-        member["rank"] = await get_member_rank(member["points"])
-        member["next_level_points"] = calculate_next_level_points(member["level"])
+        return {
+            "status": "success",
+            "data": updated_member
+        }
         
-        return member
-        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error updating member: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.put("/api/members/{member_id}/points")
 async def update_member_points(member_id: str, points: int):
     """
-    Update a member's points directly
+    Update a member's points directly and recalculate level/badges
     """
     try:
-        obj_id = ObjectId(member_id)
+        # Validate points
+        if points < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Points cannot be negative"
+            )
+            
+        # Get current member data
+        member = await members_collection.find_one({"_id": ObjectId(member_id)})
+        if not member:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Member not found"
+            )
+        
+        # Calculate new level and badges
+        new_level = compute_level(points)
+        badges = get_badges(points, member.get("contributions", []))
+        
+        # Update member with atomic operation
         result = await members_collection.update_one(
-            {"_id": obj_id},
+            {"_id": ObjectId(member_id)},
             {
                 "$set": {
                     "points": points,
-                    "last_active": datetime.now().strftime("%Y-%m-%d")
+                    "level": new_level,
+                    "badges": badges,
+                    "last_active": datetime.utcnow()
                 }
             }
         )
         
-        if result.matched_count == 0:
-            raise HTTPException(status_code=404, detail="Member not found")    
-        member = await members_collection.find_one({"_id": obj_id})
-        badges = get_badges(points, member.get("contributions", []))
-        level = BadgeType.BRONZE.value
-        
-        if points >= 1000:
-            level = BadgeType.PLATINUM.value
-        elif points >= 500:
-            level = BadgeType.GOLD.value
-        elif points >= 100:
-            level = BadgeType.SILVER.value
+        if result.modified_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Member not found or no changes made"
+            )
             
-        await members_collection.update_one(
-            {"_id": obj_id},
-            {
-                "$set": {
-                    "level": level,
-                    "badges": list(set(badges + [level]))  # Ensure no duplicates
-                }
+        # Get updated member with rank
+        updated_member = await members_collection.find_one({"_id": ObjectId(member_id)})
+        rank = await get_member_rank(updated_member["points"])
+        
+        return {
+            "status": "success",
+            "data": {
+                "id": str(updated_member["_id"]),
+                "name": updated_member["name"],
+                "points": updated_member["points"],
+                "level": updated_member["level"],
+                "badges": updated_member.get("badges", []),
+                "rank": rank
             }
-        )
+        }
         
-        return {"status": "success", "message": "Points updated successfully"}
-        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error updating points: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Error updating member points: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating member points: {str(e)}"
+        )
 
-@app.delete("/api/members/{member_id}")
+@app.delete("/api/members/{member_id}", response_model=dict)
 async def delete_member(member_id: str):
     """
     Delete a member
     """
     try:
-        obj_id = ObjectId(member_id)
+        try:
+            obj_id = ObjectId(member_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid member ID format")
+            
         result = await members_collection.delete_one({"_id": obj_id})
         
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Member not found")
             
-        return {"status": "success", "message": "Member deleted successfully"}
+        return {
+            "status": "success",
+            "message": "Member deleted successfully"
+        }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error deleting member: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to delete member")
 
 if __name__ == "__main__":
     import uvicorn

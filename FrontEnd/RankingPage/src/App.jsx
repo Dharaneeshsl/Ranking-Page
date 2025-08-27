@@ -203,39 +203,6 @@ const App = () => {
         </Modal.Footer>
       </Modal>
     </Container>
-
-    {/* Edit Points Modal */}
-    <Modal show={showEditModal} onHide={() => setShowEditModal(false)}>
-      <Modal.Header closeButton>
-        <Modal.Title>Edit Points</Modal.Title>
-      </Modal.Header>
-      <Modal.Body>
-        {editingMember && (
-          <Form>
-            <Form.Group className="mb-3">
-              <Form.Label>Member Name</Form.Label>
-              <Form.Control type="text" value={editingMember?.name || ''} disabled />
-            </Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label>Points</Form.Label>
-              <Form.Control 
-                type="number" 
-                value={editPoints} 
-                onChange={(e) => setEditPoints(e.target.value)}
-              />
-            </Form.Group>
-          </Form>
-        )}
-      </Modal.Body>
-      <Modal.Footer>
-        <Button variant="secondary" onClick={() => setShowEditModal(false)}>
-          Cancel
-        </Button>
-        <Button variant="primary" onClick={handleUpdatePoints}>
-          Save Changes
-        </Button>
-      </Modal.Footer>
-    </Modal>
   );
 };
 
