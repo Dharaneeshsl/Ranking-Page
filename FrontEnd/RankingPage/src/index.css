@@ -1,0 +1,342 @@
+/* Simpler, clean intro: image -> title */
+.title-hero { position: relative; display: flex; align-items: center; justify-content: center; gap: 16px; min-height: 160px; margin-bottom: 12px; overflow: hidden; z-index: 0; }
+.title-hero .intro-img {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  transform: scale(1);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  border-radius: 14px; /* softer corners, not circular */
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55), 0 0 30px rgba(0, 229, 255, 0.25);
+  mix-blend-mode: screen; /* blend with neon background */
+  opacity: 0.9;
+  transition: transform 0.8s ease, opacity 0.8s ease, filter 0.8s ease;
+  z-index: 0;
+  pointer-events: none;
+}
+.title-hero .intro-img::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(ellipse at center, rgba(255,255,255,0) 55%, rgba(0,0,0,0.6) 110%);
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+.title-hero .text {
+  position: relative;
+  display: inline-block;
+  background: none !important;
+  -webkit-background-clip: initial !important;
+  color: #ffffff !important;
+  -webkit-text-stroke: 1px rgba(0, 0, 0, 0.8);
+  text-shadow: 0 0 16px rgba(0,229,255,0.35), 0 0 26px rgba(255,0,128,0.25);
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  z-index: 1;
+}
+.title-hero.play .intro-img {
+  transform: scale(0.6);
+  opacity: 1;
+  filter: none;
+}
+.title-hero.play .text { opacity: 1; }
+/* Global gaming theme */
+:root {
+  --bg-gradient: radial-gradient(circle at 20% 20%, #0a0f1e 0%, #05070f 60%, #000000 100%);
+  --card-bg: rgba(9, 14, 33, 0.85);
+  --card-border: rgba(0, 255, 255, 0.2);
+  --primary: #00e5ff;
+  --secondary: #8a2be2;
+  --accent: #ff0080;
+  --success: #00ff9c;
+  --warning: #ffc107;
+  --danger: #ff4d4f;
+  --text: #f2fbff; /* brighter text for contrast */
+  --muted: #c8d6e5; /* less muted for readability */
+  --glow: 0 0 12px rgba(0, 229, 255, 0.6), 0 0 24px rgba(138, 43, 226, 0.3);
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  background: var(--bg-gradient);
+  background-attachment: fixed;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  position: relative;
+}
+
+/* Optional template background image layer (safe, behind everything) */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: url("/ROG_wallpaper_Future-Metropolis_16x10.jpg") center / cover no-repeat;
+  opacity: 0.28; /* adjust to taste */
+  z-index: -2;
+  pointer-events: none;
+}
+
+/* Animated background grid */
+.bg-grid::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(circle at 50% 50%, rgba(0,0,0,0.9) 20%, rgba(0,0,0,0.6) 60%, rgba(0,0,0,0.2) 100%);
+  pointer-events: none;
+  animation: grid-float 12s linear infinite;
+}
+
+@keyframes grid-float {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-40px); }
+}
+
+/* Primary neon button */
+.btn-neon {
+  background: linear-gradient(90deg, var(--secondary), var(--primary));
+  border: none !important;
+  color: #001018 !important;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  box-shadow: var(--glow);
+  transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+.btn-neon:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.1);
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.8), 0 0 26px rgba(138, 43, 226, 0.4);
+}
+.btn-neon:active {
+  transform: translateY(0);
+}
+
+/* Form controls */
+.control-neon.form-control, .control-neon.form-select {
+  background: rgba(0, 0, 0, 0.2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--card-border) !important;
+  outline: none !important;
+  box-shadow: inset 0 0 0 1px rgba(0, 229, 255, 0.08);
+}
+.control-neon.form-select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  padding-right: 2.5rem;
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 16px 12px;
+  --bs-form-select-bg-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='12' viewBox='0 0 16 12'%3E%3Cpath fill='%23f2fbff' d='M2 3l6 6 6-6z'/%3E%3C/svg%3E");
+  background-image: var(--bs-form-select-bg-img);
+}
+
+/* Force visible white caret via wrapper */
+.select-caret { position: relative; }
+.select-caret::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 0; height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 8px solid #ffffff; /* white caret */
+  transform: translateY(-50%);
+  pointer-events: none;
+  filter: drop-shadow(0 0 6px rgba(0,229,255,0.6));
+}
+/* Hide native arrow in some UAs inside wrapper */
+.select-caret select { background-image: none !important; }
+.control-neon.form-select:focus {
+  border-color: rgba(0, 229, 255, 0.6) !important;
+  box-shadow: 0 0 0 0.2rem rgba(0, 229, 255, 0.15);
+}
+.control-neon.form-select option {
+  color: #0b1722;
+  background: #e9f6ff;
+}
+.control-neon[type="date"] {
+  padding-right: 36px; /* space for icon */
+}
+.control-neon[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.6) drop-shadow(0 0 6px rgba(0,229,255,0.6));
+  opacity: 1;
+  cursor: pointer;
+}
+/* Firefox uses a button; make it visible */
+.control-neon[type="date"]::-moz-focus-inner { border: 0; }
+.control-neon[type="date"]::-moz-calendar-picker-indicator {
+  filter: invert(1) brightness(1.6);
+}
+.control-neon::placeholder { color: var(--muted); }
+.form-label { color: var(--text); font-weight: 700; letter-spacing: 0.2px; }
+
+/* Card container */
+.panel-card {
+  background: var(--card-bg) !important;
+  border: none !important;
+  border-radius: 16px !important;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 12px 36px rgba(0,0,0,0.45);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+}
+
+.panel-title {
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  -webkit-text-stroke: 2px rgba(0, 0, 0, 0.75);
+  text-shadow: 0 2px 20px rgba(0,229,255,0.55), 0 0 30px rgba(255,0,128,0.35);
+}
+
+/* Hover text flip for title */
+/* Morph: dot -> text reveal */
+.title-morph { position: relative; display: inline-block; z-index: 0; }
+.title-morph::before {
+  content: "";
+  position: absolute;
+  inset: -8px -14px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(0, 229, 255, 0.18);
+  border-radius: 16px;
+  filter: blur(6px);
+  z-index: 0;
+}
+.title-morph .reveal-img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 160px;
+  height: 160px;
+  transform: translate(-50%, -50%) scale(1);
+  border-radius: 12px;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  box-shadow: 0 0 30px rgba(255, 255, 255, 0.55), 0 0 40px rgba(0, 229, 255, 0.45);
+  transition: transform 1.2s ease, opacity 1.2s ease, filter 1.2s ease;
+  pointer-events: none;
+  z-index: 1;
+}
+.title-morph.play .reveal-img {
+  transition-delay: 0.4s;
+  transform: translate(-50%, -50%) scale(18);
+  opacity: 0;
+  filter: blur(8px);
+}
+.title-morph .letters { position: relative; display: inline-block; }
+.title-morph .letter {
+  display: inline-block;
+  opacity: 0;
+  transform: scale(0.8) translateY(8px);
+  filter: blur(6px);
+  z-index: 2;
+}
+.title-morph.play .letter {
+  animation: morph-pop-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: calc(900ms + var(--i) * 60ms);
+}
+@keyframes morph-pop-in {
+  60% { opacity: 1; transform: scale(1.06) translateY(0); filter: blur(0); }
+  100% { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
+}
+
+/* Leaderboard table */
+.lb-table.table {
+  --bs-table-bg: transparent;
+  --bs-table-striped-bg: rgba(255,255,255,0.06);
+  --bs-table-hover-bg: rgba(0, 229, 255, 0.12);
+  color: var(--text);
+  border-color: transparent; /* no visible table border */
+}
+.lb-table thead th {
+  background: linear-gradient(90deg, rgba(0,229,255,0.22), rgba(138,43,226,0.22));
+  border-bottom: 1px solid rgba(0, 0, 0, 0.3); /* subtle, dark, not glowing */
+  color: #ffffff;
+  font-weight: 700;
+}
+.lb-table tbody td, .lb-table tbody th { border-top-color: rgba(0,0,0,0.2); }
+.lb-table tbody td, .lb-table tbody th { color: var(--text); }
+.lb-row {
+  transition: transform 0.15s ease, background 0.2s ease;
+}
+.lb-row:hover {
+  transform: translateY(-1px) scale(1.01);
+}
+
+/* Medal chips */
+.medal {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  color: #06121a;
+}
+.medal-gold { background: linear-gradient(90deg, #ffd700, #ffb300); }
+.medal-silver { background: linear-gradient(90deg, #e0e0e0, #c0c0c0); }
+.medal-bronze { background: linear-gradient(90deg, #d6a055, #bf7f30); }
+.medal-std { background: linear-gradient(90deg, #0dcaf0, #00e5ff); color: #001018; }
+
+/* Badge chips */
+.badge-chip {
+  background: rgba(6, 18, 26, 0.85);
+  color: var(--text);
+  border: 1px solid rgba(0, 229, 255, 0.5);
+  padding: 4px 8px;
+  border-radius: 10px;
+  margin: 0 6px 6px 0;
+  display: inline-block;
+  font-size: 12px;
+}
+
+/* Progress bar */
+.xp-bar {
+  height: 10px;
+  background: rgba(255,255,255,0.14);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 229, 255, 0.35);
+}
+.xp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--success), var(--primary));
+  box-shadow: 0 0 10px rgba(0,255,156,0.5);
+}
+
+/* High-contrast overrides for warning/danger buttons */
+.btn-warning { color: #1a1200 !important; font-weight: 700; }
+.btn-danger { color: #fff !important; font-weight: 700; }
+
+/* Improve placeholders visibility */
+.control-neon::placeholder { color: #b9c6d8; }
+
+/* Appear animation */
+.fade-slide-in {
+  opacity: 0;
+  transform: translateY(10px);
+  animation: fadeInUp 0.4s ease forwards;
+}
+@keyframes fadeInUp {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+
