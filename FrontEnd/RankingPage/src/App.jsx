@@ -4,6 +4,12 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import { Container, Form, Button, Table, Row, Col, Modal, ProgressBar, Badge } from 'react-bootstrap';
 import ElectricBorder from './ElectricBorder';
 
+
+
+
+
+
+
 const App = () => {
   const [leaderboard, setLeaderboard] = useState({ leaderboard: [] });
   const [name, setName] = useState('');
@@ -133,7 +139,7 @@ const App = () => {
       <Row className="g-4 align-items-stretch">
         <Col md={6} className="d-flex">
           <ElectricBorder
-            color="#ffb86b"
+            color="#d21349ff"
             speed={1}
             chaos={0.5}
             thickness={2}
@@ -166,7 +172,7 @@ const App = () => {
 
         <Col md={6} className="d-flex">
           <ElectricBorder
-            color="#ffb86b"
+            color="#f74f0dff"
             speed={1}
             chaos={0.5}
             thickness={2}
