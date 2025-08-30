@@ -137,7 +137,33 @@ class MemberResponse(MemberBase):
             ObjectId: str  # For direct ObjectId serialization
         }
 
-# Removed AddPointsRequest to prevent point manipulation
+@app.post("/api/members/", response_model=MemberResponse)
+async def create_member(member: MemberCreate):
+    """
+    Create a new member with the given details
+    """
+    try:
+        member_data = member.dict()
+        member_data["join_date"] = datetime.utcnow()
+        member_data["last_active"] = datetime.utcnow()
+        member_data["contributions"] = []
+        member_data["level"] = BadgeType.BRONZE.value
+        member_data["badges"] = [BadgeType.BRONZE.value]
+        
+        result = await members_collection.insert_one(member_data)
+        created_member = await members_collection.find_one({"_id": result.inserted_id})
+        
+        # Convert ObjectId to string for JSON serialization
+        created_member["id"] = str(created_member["_id"])
+        del created_member["_id"]
+        
+        return created_member
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error creating member: {str(e)}"
+        )
 
 async def get_member_rank(points: int):
     """Get member's current rank based on points"""
