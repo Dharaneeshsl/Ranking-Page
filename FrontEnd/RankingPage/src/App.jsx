@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { Container, Form, Button, Table, Row, Col, Modal, ProgressBar, Badge } from 'react-bootstrap';
+import ElectricBorder from './ElectricBorder';
 
 const App = () => {
   const [leaderboard, setLeaderboard] = useState({ leaderboard: [] });
@@ -115,6 +116,15 @@ const App = () => {
   return (<>
     <div className="bg-grid" />
     <Container className="my-5 p-4" style={{ maxWidth: '900px' }}>
+      {/* Hidden SVG defs for potential gradients (placeholder for future use) */}
+      <svg className="eb-svg" aria-hidden="true" focusable="false">
+        <defs>
+          <linearGradient id="eb-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#00e5ff" />
+            <stop offset="100%" stopColor="#8a2be2" />
+          </linearGradient>
+        </defs>
+      </svg>
       <div className={`mb-4 title-hero ${playTitleAnim ? 'play' : ''}`}>
         <span className="intro-img" style={{ backgroundImage: 'url(/FAVICON.png)' }} />
         <h1 className="panel-title text">Gamified Ranking System</h1>
@@ -122,50 +132,66 @@ const App = () => {
 
       <Row className="g-4 align-items-stretch">
         <Col md={6} className="d-flex">
-          <div className="p-3 panel-card fade-slide-in flex-fill">
-            <h4 className="mb-3">Add Contribution</h4>
-            <Form>
-              <Form.Group className="mb-3">
-                <Form.Label>Member Name</Form.Label>
-                <Form.Control className="control-neon" value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter name" />
-              </Form.Group>
-              <Form.Group className="mb-3">
-                <Form.Label>Action</Form.Label>
-                <div className="select-caret">
-                <Form.Select className="control-neon" value={action} onChange={(e) => setAction(e.target.value)}>
-                  <option value="attend_event">Attend Event (+10)</option>
-                  <option value="volunteer_task">Volunteer Task (+20)</option>
-                  <option value="lead_event">Lead Event (+50)</option>
-                  <option value="upload_docs">Upload Docs (+15)</option>
-                  <option value="bring_sponsorship">Bring Sponsorship (+100)</option>
-                </Form.Select>
-                </div>
-              </Form.Group>
-              <Button className="w-100 mb-2 btn-neon" onClick={addPoints}>Add Points</Button>
-            </Form>
-          </div>
+          <ElectricBorder
+            color="#ffb86b"
+            speed={1}
+            chaos={0.5}
+            thickness={2}
+            style={{ borderRadius: 16, width: '100%' }}
+          >
+            <div className="p-3 panel-card fade-slide-in">
+              <h4 className="mb-3">Add Contribution</h4>
+              <Form>
+                <Form.Group className="mb-3">
+                  <Form.Label>Member Name</Form.Label>
+                  <Form.Control className="control-neon" value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter name" />
+                </Form.Group>
+                <Form.Group className="mb-3">
+                  <Form.Label>Action</Form.Label>
+                  <div className="select-caret">
+                  <Form.Select className="control-neon" value={action} onChange={(e) => setAction(e.target.value)}>
+                    <option value="attend_event">Attend Event (+10)</option>
+                    <option value="volunteer_task">Volunteer Task (+20)</option>
+                    <option value="lead_event">Lead Event (+50)</option>
+                    <option value="upload_docs">Upload Docs (+15)</option>
+                    <option value="bring_sponsorship">Bring Sponsorship (+100)</option>
+                  </Form.Select>
+                  </div>
+                </Form.Group>
+                <Button className="w-100 mb-2 btn-neon" onClick={addPoints}>Add Points</Button>
+              </Form>
+            </div>
+          </ElectricBorder>
         </Col>
 
         <Col md={6} className="d-flex">
-          <div className="p-3 panel-card fade-slide-in flex-fill">
-            <h4 className="mb-3">Filter Period</h4>
-            <Form>
-              <Row>
-                <Col>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Start Date</Form.Label>
-                    <Form.Control className="control-neon" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-                  </Form.Group>
-                </Col>
-                <Col>
-                  <Form.Group className="mb-3">
-                    <Form.Label>End Date</Form.Label>
-                    <Form.Control className="control-neon" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-                  </Form.Group>
-                </Col>
-              </Row>
-            </Form>
-          </div>
+          <ElectricBorder
+            color="#ffb86b"
+            speed={1}
+            chaos={0.5}
+            thickness={2}
+            style={{ borderRadius: 16, width: '100%' }}
+          >
+            <div className="p-3 panel-card fade-slide-in">
+              <h4 className="mb-3">Filter Period</h4>
+              <Form>
+                <Row>
+                  <Col>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Start Date</Form.Label>
+                      <Form.Control className="control-neon" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                    </Form.Group>
+                  </Col>
+                  <Col>
+                    <Form.Group className="mb-3">
+                      <Form.Label>End Date</Form.Label>
+                      <Form.Control className="control-neon" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                    </Form.Group>
+                  </Col>
+                </Row>
+              </Form>
+            </div>
+          </ElectricBorder>
         </Col>
       </Row>
 
