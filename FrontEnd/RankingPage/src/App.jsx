@@ -1,14 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import { Container, Form, Button, Table, Row, Col, Modal, ProgressBar, Badge } from 'react-bootstrap';
+import { Container, Form, Button, Table, Row, Col, Modal } from 'react-bootstrap';
 import ElectricBorder from './ElectricBorder';
-
-
-
-
-
-
 
 const App = () => {
   const [leaderboard, setLeaderboard] = useState({ leaderboard: [] });
@@ -16,52 +10,10 @@ const App = () => {
   const [action, setAction] = useState('attend_event');
   const [startDate, setStartDate] = useState('2025-01-01');
   const [endDate, setEndDate] = useState('2025-12-31');
+  const [playTitleAnim, setPlayTitleAnim] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editPoints, setEditPoints] = useState(0);
-  const [playTitleAnim, setPlayTitleAnim] = useState(false);
-
-  useEffect(() => {
-    fetchLeaderboard();
-  }, [startDate, endDate]);
-
-  useEffect(() => {
-    const t = setTimeout(() => setPlayTitleAnim(true), 200);
-    return () => { clearTimeout(t); };
-  }, []);
-
-  const fetchLeaderboard = async () => {
-    try {
-      const res = await axios.get(`http://localhost:8000/api/leaderboard?start_date=${startDate}&end_date=${endDate}`);
-      if (res.data.status === "success") {
-        setLeaderboard(res.data.data || { leaderboard: [] });
-      } else {
-        setLeaderboard({ leaderboard: [{ name: "Error", total_points: 0, level: "N/A", badges: [] }] });
-      }
-    } catch (err) {
-      console.error("Fetch error:", err);
-      setLeaderboard({ leaderboard: [{ name: "Server Error", total_points: 0, level: "N/A", badges: [] }] });
-    }
-  };
-
-  const addPoints = async () => {
-    if (!name.trim()) {
-      alert("Please enter a name.");
-      return;
-    }
-    try {
-      const res = await axios.post('http://localhost:8000/api/points', { name: name.trim(), action });
-      if (res.data.status === "success") {
-        fetchLeaderboard();
-        setName('');
-      } else {
-        alert("Add failed: " + res.data.message);
-      }
-    } catch (err) {
-      console.error("Add error:", err);
-      alert("Add failed: Check server.");
-    }
-  };
 
   const handleEdit = (member) => {
     setEditingMember(member);
@@ -80,12 +32,9 @@ const App = () => {
       if (res.data.status === "success") {
         setShowEditModal(false);
         fetchLeaderboard();
-      } else {
-        alert("Update failed: " + res.data.message);
       }
     } catch (err) {
       console.error("Update error:", err);
-      alert("Update failed: Check server.");
     }
   };
 
@@ -97,12 +46,48 @@ const App = () => {
       
       if (res.data.status === "success") {
         fetchLeaderboard();
-      } else {
-        alert("Delete failed: " + res.data.message);
       }
     } catch (err) {
       console.error("Delete error:", err);
-      alert("Delete failed: Check server.");
+    }
+  };
+
+  useEffect(() => {
+    fetchLeaderboard();
+  }, [startDate, endDate]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setPlayTitleAnim(true), 200);
+    return () => { clearTimeout(t); };
+  }, []);
+
+  const fetchLeaderboard = async () => {
+    try {
+      const res = await axios.get(`http://localhost:8000/api/leaderboard?start_date=${startDate}&end_date=${endDate}`);
+      if (res.data.status === "success") {
+        setLeaderboard(res.data.data || { leaderboard: [] });
+      }
+    } catch (err) {
+      console.error("Fetch error:", err);
+    }
+  };
+
+  const addPoints = async () => {
+    if (!name.trim()) {
+      alert("Please enter a name.");
+      return;
+    }
+    try {
+      const res = await axios.post('http://localhost:8000/api/points', { 
+        name: name.trim(), 
+        action 
+      });
+      if (res.data.status === "success") {
+        fetchLeaderboard();
+        setName('');
+      }
+    } catch (err) {
+      console.error("Add error:", err);
     }
   };
 
@@ -110,7 +95,7 @@ const App = () => {
     if (rank === 1) return 'medal medal-gold';
     if (rank === 2) return 'medal medal-silver';
     if (rank === 3) return 'medal medal-bronze';
-    return 'medal medal-std';
+    return 'medal';
   };
 
   const xpPercent = (points) => {
@@ -119,10 +104,74 @@ const App = () => {
     return Number.isFinite(pct) ? pct : 0;
   };
 
-  return (<>
-    <div className="bg-grid" />
-    <Container className="my-5 p-4" style={{ maxWidth: '900px' }}>
-      {/* Hidden SVG defs for potential gradients (placeholder for future use) */}
+  return (
+    <div>
+      <div className="bg-grid" />
+      <Container className="my-5 p-4" style={{ maxWidth: '900px' }}>
+        <Row className="g-4 align-items-stretch">
+          <Col md={6} className="d-flex">
+            <ElectricBorder
+              color="#d21349ff"
+              speed={1}
+              chaos={0.5}
+              thickness={2}
+              style={{ borderRadius: 16, width: '100%' }}
+            >
+              <div className="p-3 panel-card fade-slide-in">
+                <h4 className="mb-3">Add Contribution</h4>
+                <Form>
+                  <Form.Group className="mb-3">
+                    <Form.Label>Member Name</Form.Label>
+                    <Form.Control className="control-neon" value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter name" />
+                  </Form.Group>
+                  <Form.Group className="mb-3">
+                    <Form.Label>Action</Form.Label>
+                    <div className="select-caret">
+                    <Form.Select className="control-neon" value={action} onChange={(e) => setAction(e.target.value)}>
+                      <option value="attend_event">Attend Event (+10)</option>
+                      <option value="volunteer_task">Volunteer Task (+20)</option>
+                      <option value="lead_event">Lead Event (+50)</option>
+                      <option value="upload_docs">Upload Docs (+15)</option>
+                      <option value="bring_sponsorship">Bring Sponsorship (+100)</option>
+                    </Form.Select>
+                    </div>
+                  </Form.Group>
+                  <Button className="w-100 mb-2 btn-neon" onClick={addPoints}>Add Points</Button>
+                </Form>
+              </div>
+            </ElectricBorder>
+          </Col>
+
+          <Col md={6} className="d-flex">
+            <ElectricBorder
+              color="#f74f0dff"
+              speed={1}
+              chaos={0.5}
+              thickness={2}
+              style={{ borderRadius: 16, width: '100%' }}
+            >
+              <div className="p-3 panel-card fade-slide-in">
+                <h4 className="mb-3">Filter Period</h4>
+                <Form>
+                  <Row>
+                    <Col>
+                      <Form.Group className="mb-3">
+                        <Form.Label>Start Date</Form.Label>
+                        <Form.Control className="control-neon" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                      </Form.Group>
+                    </Col>
+                    <Col>
+                      <Form.Group className="mb-3">
+                        <Form.Label>End Date</Form.Label>
+                        <Form.Control className="control-neon" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                      </Form.Group>
+                    </Col>
+                  </Row>
+                </Form>
+              </div>
+            </ElectricBorder>
+          </Col>
+        </Row>
       <svg className="eb-svg" aria-hidden="true" focusable="false">
         <defs>
           <linearGradient id="eb-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -287,8 +336,8 @@ const App = () => {
           </Button>
         </Modal.Footer>
       </Modal>
-    </Container>
-  </> 
+      </Container>
+    </div>
   );
 };
 
