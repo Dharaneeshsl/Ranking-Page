@@ -288,7 +288,8 @@ const App = () => {
         </Modal.Footer>
       </Modal>
     </Container>
-  </> );
+  </> 
+  );
 };
 
 export default App;
