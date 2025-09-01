@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
-from database import members_collection
-from utils import compute_level, get_badges
+from ..database import members_collection
+from ..utils import compute_level, get_badges
 from datetime import datetime, timedelta
 import logging
 

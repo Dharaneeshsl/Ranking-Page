@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from database import startup_db_client
-from routes import leaderboard, members
+from .database import startup_db_client
+from .routes import leaderboard_router, members_router, contributions_router
 
 app = FastAPI(title="Gamified Ranking API")
 
@@ -20,8 +20,9 @@ async def startup_event():
     await startup_db_client()
 
 # Register routers
-app.include_router(leaderboard.router, prefix="/api")
-app.include_router(members.router, prefix="/api")
+app.include_router(leaderboard_router, prefix="/api")
+app.include_router(members_router, prefix="/api")
+app.include_router(contributions_router, prefix="/api")
 
 if __name__ == "__main__":
     import uvicorn

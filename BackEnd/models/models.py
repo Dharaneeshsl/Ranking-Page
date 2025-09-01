@@ -11,6 +11,16 @@ class ActionType(str, Enum):
     UPLOAD_DOCS = "upload_docs"
     BRING_SPONSORSHIP = "bring_sponsorship"
 
+    @property
+    def points(self):
+        return {
+            ActionType.ATTEND_EVENT: 10,
+            ActionType.VOLUNTEER_TASK: 20,
+            ActionType.LEAD_EVENT: 50,
+            ActionType.UPLOAD_DOCS: 15,
+            ActionType.BRING_SPONSORSHIP: 100
+        }[self]
+
 class BadgeType(str, Enum):
     BRONZE = "Bronze Member"
     SILVER = "Silver Member"
@@ -22,10 +32,16 @@ class BadgeType(str, Enum):
 
 class ContributionBase(BaseModel):
     action: ActionType
-    points: int
+    points: int = None
     date: str = Field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d"))
     description: Optional[str] = None
     event_name: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+    def __init__(self, **data):
+        if 'points' not in data and 'action' in data:
+            data['points'] = data['action'].points
+        super().__init__(**data)
 
 class MemberBase(BaseModel):
     name: str

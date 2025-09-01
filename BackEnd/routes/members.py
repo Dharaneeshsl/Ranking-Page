@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
-from database import members_collection
-from utils import get_member_rank, calculate_next_level_points
-from models import ActionType
+from ..database import members_collection
+from ..utils import get_member_rank, calculate_next_level_points
+from ..models import ActionType
 from bson import ObjectId
 from datetime import datetime
 import logging
