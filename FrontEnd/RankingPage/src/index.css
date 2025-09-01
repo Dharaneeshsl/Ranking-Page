@@ -1,20 +1,34 @@
-/* Simpler, clean intro: image -> title */
-.title-hero { position: relative; display: flex; align-items: center; justify-content: center; gap: 16px; min-height: 160px; margin-bottom: 12px; overflow: hidden; z-index: 0; }
+/* Title and logo section */
+.title-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  min-height: 200px;
+  margin: 20px 0 40px;
+  overflow: hidden;
+  z-index: 1;
+  text-align: center;
+  padding: 20px 0;
+}
 .title-hero .intro-img {
   position: relative;
-  width: 140px;
-  height: 140px;
+  width: 120px;
+  height: 120px;
   transform: scale(1);
   background-position: center;
   background-repeat: no-repeat;
-  background-size: cover;
-  border-radius: 14px; /* softer corners, not circular */
+  background-size: contain;
+  border-radius: 14px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55), 0 0 30px rgba(0, 229, 255, 0.25);
-  mix-blend-mode: screen; /* blend with neon background */
+  mix-blend-mode: screen;
   opacity: 0.9;
-  transition: transform 0.8s ease, opacity 0.8s ease, filter 0.8s ease;
-  z-index: 0;
+  transition: all 0.8s ease;
+  z-index: 1;
   pointer-events: none;
+  margin: 0 auto;
 }
 .title-hero .intro-img::after {
   content: "";
@@ -27,19 +41,41 @@
 }
 .title-hero .text {
   position: relative;
-  display: inline-block;
+  display: block;
   background: none !important;
   -webkit-background-clip: initial !important;
   background-clip: initial !important;
   color: #ffffff !important;
+  font-size: 2.5rem;
+  font-weight: 700;
   -webkit-text-stroke: 1px rgba(0, 0, 0, 0.8);
   text-shadow: 0 0 16px rgba(0,229,255,0.35), 0 0 26px rgba(255,0,128,0.25);
   opacity: 0;
-  transition: opacity 0.5s ease;
+  transition: all 0.5s ease;
   z-index: 1;
+  margin: 10px 0 0;
+  width: 100%;
 }
+@media (min-width: 768px) {
+  .title-hero {
+    flex-direction: row;
+    gap: 30px;
+  }
+  
+  .title-hero .intro-img {
+    width: 140px;
+    height: 140px;
+  }
+  
+  .title-hero .text {
+    font-size: 3rem;
+    text-align: left;
+    margin: 0;
+  }
+}
+
 .title-hero.play .intro-img {
-  transform: scale(0.6);
+  transform: scale(0.8);
   opacity: 1;
   filter: none;
 }
@@ -86,19 +122,38 @@ body::before {
 
 /* Animated background grid */
 .bg-grid::before {
-  content: "";
+  content: '';
   position: fixed;
   inset: 0;
-  background-image: linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
   background-size: 40px 40px;
-  mask-image: radial-gradient(circle at 50% 50%, rgba(0,0,0,0.9) 20%, rgba(0,0,0,0.6) 60%, rgba(0,0,0,0.2) 100%);
+  -webkit-mask-image: radial-gradient(
+    circle at 50% 50%,
+    rgba(0, 0, 0, 0.9) 30%,
+    rgba(0, 0, 0, 0.5) 70%,
+    rgba(0, 0, 0, 0.1) 100%
+  );
+  mask-image: radial-gradient(
+    circle at 50% 50%,
+    rgba(0, 0, 0, 0.9) 30%,
+    rgba(0, 0, 0, 0.5) 70%,
+    rgba(0, 0, 0, 0.1) 100%
+  );
   pointer-events: none;
-  animation: grid-float 12s linear infinite;
+  will-change: transform;
+  animation: grid-float 20s linear infinite;
+  opacity: 0.7;
 }
 
 @keyframes grid-float {
-  0% { transform: translateY(0); }
-  100% { transform: translateY(-40px); }
+  0% { 
+    transform: translateY(0) translateZ(0);
+  }
+  100% { 
+    transform: translateY(-40px) translateZ(0);
+  }
 }
 
 /* Primary neon button */
@@ -179,6 +234,67 @@ body::before {
   filter: invert(1) brightness(1.6);
 }
 .control-neon::placeholder { color: var(--muted); }
+/* Header Styles */
+.app-header {
+  width: 100%;
+  margin: 2rem 0 3rem;
+  padding: 0 15px;
+}
+
+.title-hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+
+.logo-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header-logo {
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+}
+
+.panel-title {
+  font-size: 2.5rem;
+  font-weight: 800;
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  margin: 0;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* Responsive styles */
+@media (max-width: 768px) {
+  .title-hero {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .panel-title {
+    font-size: 2rem;
+    white-space: normal;
+    line-height: 1.1;
+  }
+  
+  .header-logo {
+    width: 50px;
+    height: 50px;
+  }
+}
+
+/* Form Styles */
 .form-label { color: var(--text); font-weight: 700; letter-spacing: 0.2px; }
 
 /* Card container */
@@ -186,7 +302,6 @@ body::before {
   background: var(--card-bg) !important;
   border: none !important;
   border-radius: 16px !important;
-  backdrop-filter: blur(8px);
   box-shadow: 0 12px 36px rgba(0,0,0,0.45);
   color: var(--text);
   display: flex;
