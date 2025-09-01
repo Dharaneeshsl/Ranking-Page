@@ -1,78 +1,133 @@
-# Gamified Ranking System - Backend
+# 🏆 Gamified Ranking System - Backend
 
-This is the backend service for the Gamified Ranking System, built with FastAPI and MongoDB.
+A high-performance backend service for tracking member contributions and rankings, built with FastAPI and MongoDB.
 
-## Prerequisites
+## 🚀 Quick Start
 
-- Python 3.8+
-- MongoDB (running locally on default port 27017)
+### Prerequisites
 
-## Setup
+- Python 3.8 or higher
+- MongoDB 4.4+ (running locally on default port 27017)
+- Git (for version control)
+
+### 🛠️ Installation
 
 1. **Clone the repository**
+
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/yourusername/Ranking-Page.git
    cd Ranking-Page/BackEnd
    ```
 
-2. **Set up virtual environment** (Windows)
+2. **Set up virtual environment**
+
    ```bash
-   # Create virtual environment
+   # Windows
    python -m venv venv
-   
-   # Activate virtual environment
    .\venv\Scripts\activate
+
+   # macOS/Linux
+   python3 -m venv venv
+   source venv/bin/activate
    ```
 
 3. **Install dependencies**
+
    ```bash
    pip install -r requirements.txt
    ```
 
-## Running the Application
-
-1. **Start MongoDB**
+4. **Start MongoDB**
    - Make sure MongoDB is running on your system
+   - Default connection: `mongodb://localhost:27017`
 
-2. **Run the FastAPI server**
+5. **Run the application**
+
    ```bash
    uvicorn main:app --reload
    ```
 
-3. **Access the API documentation**
-   - Open your browser and go to: http://localhost:8000/docs
+6. **Access the API documentation**
+   - Interactive API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+   - Alternative docs: [http://localhost:8000/redoc](http://localhost:8000/redoc)
 
-## API Endpoints
+## 📊 Features
 
-- `GET /api/leaderboard` - Get leaderboard data
-- `GET /api/members/{member_id}` - Get member details
-- `POST /api/members/{member_id}/contributions` - Add a new contribution
+- **Points System**
+  - Attend events, volunteer, lead events, upload docs, and bring sponsorships
+  - Automatic point calculation based on contribution type
 
-## Project Structure
+- **Level Progression**
+  - Bronze (0-50 pts) → Silver (51-150) → Gold (151-300) → Platinum (300+)
+  - Automatic level upgrades
 
-```
+- **Leaderboard**
+  - Real-time ranking of members
+  - Filter by time period (monthly/quarterly/yearly)
+
+## 🌐 API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/leaderboard` | Get ranked member list |
+| `GET` | `/api/members/{id}` | Get member details |
+| `POST` | `/api/members/{id}/contributions` | Add new contribution |
+| `GET` | `/api/members` | List all members |
+
+## 🏗️ Project Structure
+
+```text
 BackEnd/
-├── database.py       # Database connection and setup
-├── main.py          # FastAPI application entry point
-├── models/          # Data models
+├── database.py       # MongoDB connection and setup
+├── main.py          # FastAPI app and routes
+├── models/          # Data models and schemas
 │   └── models.py
-├── routes/          # API routes
+├── routes/          # API route handlers
 │   ├── __init__.py
 │   ├── leaderboard.py
 │   ├── members.py
 │   └── contributions.py
-└── utils.py         # Helper functions
+├── utils.py         # Helper functions
+└── requirements.txt # Project dependencies
 ```
 
-## Development
+## 🧪 Testing
 
-- **Virtual Environment**: Always activate the virtual environment before working on the project
-- **Environment Variables**: Create a `.env` file for local development if needed
-- **Testing**: Run tests with `pytest` (coming soon)
+Run the test suite:
 
-## Deployment
+```bash
+pytest
+```
 
-For production deployment, consider using:
-- Gunicorn as the production server
-- Environment variables for configuration
-- Proper logging and monitoring
+## 🚀 Deployment
+
+For production deployment:
+
+1. Set environment variables:
+
+   ```env
+   MONGODB_URI=your_mongodb_uri
+   ENVIRONMENT=production
+   ```
+
+2. Install production dependencies:
+
+   ```bash
+   pip install gunicorn uvicorn[standard]
+   ```
+
+3. Run with Gunicorn:
+
+   ```bash
+   gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker
+   ```
+
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Credits
+
+- Built with [FastAPI](https://fastapi.tiangolo.com/)
+- Data stored in [MongoDB](https://www.mongodb.com/)
+- Powered by Python 🐍
