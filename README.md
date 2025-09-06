@@ -7,7 +7,7 @@ A full-stack application for managing and displaying member rankings and contrib
 - **Member Management**: Add, view, and manage members
 - **Contribution Tracking**: Record and track member contributions
 - **Leaderboard**: Real-time ranking system
-- **Secure Authentication**: JWT-based authentication
+- **Secure Authentication**: Session-based authentication
 - **Responsive Design**: Works on desktop and mobile
 
 ## 🛠 Tech Stack
@@ -16,7 +16,7 @@ A full-stack application for managing and displaying member rankings and contrib
 
 - **Framework**: FastAPI
 - **Database**: MongoDB
-- **Authentication**: JWT
+- **Authentication**: Session-based
 - **Containerization**: Docker
 - **Deployment**: Ready for production
 
@@ -65,8 +65,6 @@ A full-stack application for managing and displaying member rankings and contrib
    npm install
    ```
 
-
-
 ## 🚀 Running Locally
 
 ### Using Docker (Recommended)
@@ -101,7 +99,7 @@ Once the backend is running, access the API documentation at:
 ## 🔒 Security
 
 - All passwords are hashed using bcrypt
-- JWT tokens for secure authentication
+- Secure session management with HTTP-only cookies
 - Environment variables for sensitive data
 - CORS protection
 - Rate limiting in production
