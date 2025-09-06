@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Callable, List, Union
 from fastapi import Request, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
 import secrets
 from functools import wraps
 
