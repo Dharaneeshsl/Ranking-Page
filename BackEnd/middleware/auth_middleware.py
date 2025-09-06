@@ -1,20 +1,15 @@
 import os
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, Callable, List, Union
+from typing import Optional, Dict, Any, List
 from fastapi import Request, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import secrets
-from functools import wraps
 
 # Load environment variables
 from dotenv import load_dotenv
 load_dotenv()
 
-# Security configuration
-SECRET_KEY = os.getenv("SECRET_KEY", secrets.token_hex(32))
-ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 24 hours by default
-REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+# Session configuration
+SESSION_EXPIRE_MINUTES = int(os.getenv("SESSION_EXPIRE_MINUTES", "1440"))  # 24 hours by default
 
 class SessionManager:
     def __init__(self):
@@ -24,7 +19,7 @@ class SessionManager:
     def create_session(self, user_data: Dict[str, Any]) -> str:
         """Create a new session and return session ID"""
         session_id = secrets.token_urlsafe(32)
-        expires = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expires = datetime.utcnow() + timedelta(minutes=SESSION_EXPIRE_MINUTES)
         
         self.sessions[session_id] = {
             "user": user_data,
@@ -117,5 +112,5 @@ def require_auth(roles: List[str] = None):
         
     return dependency
 
-# Alias for backwards compatibility
+# Alias for role-based access control
 require_role = require_auth
