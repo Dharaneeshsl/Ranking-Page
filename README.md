@@ -13,6 +13,7 @@ A full-stack application for managing and displaying member rankings and contrib
 ## 🛠 Tech Stack
 
 ### Backend
+
 - **Framework**: FastAPI
 - **Database**: MongoDB
 - **Authentication**: JWT
@@ -20,6 +21,7 @@ A full-stack application for managing and displaying member rankings and contrib
 - **Deployment**: Ready for production
 
 ### Frontend
+
 - **Framework**: React.js
 - **UI Library**: Material-UI
 - **State Management**: Context API
@@ -28,6 +30,7 @@ A full-stack application for managing and displaying member rankings and contrib
 ## 🚀 Getting Started
 
 ### Prerequisites
+
 - Python 3.8+
 - Node.js 16+
 - MongoDB
@@ -36,26 +39,33 @@ A full-stack application for managing and displaying member rankings and contrib
 ### Installation
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/Dharaneeshsl/Ranking-Page.git
    cd Ranking-Page
    ```
 
 2. **Backend Setup**
+
    ```bash
    cd BackEnd
    python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   # On Windows:
+   .\venv\Scripts\activate
+   # On Unix or MacOS:
+   # source venv/bin/activate
+   
    pip install -r requirements.txt
    ```
 
 3. **Frontend Setup**
+
    ```bash
    cd ../FrontEnd/RankingPage
    npm install
    ```
 
-### Environment Variables
+## Environment Variables
 
 Create a `.env` file in the BackEnd directory with the following variables:
 
@@ -85,12 +95,14 @@ docker-compose up --build
 ### Manual Start
 
 1. **Start Backend**
+
    ```bash
    cd BackEnd
    uvicorn main:app --reload
    ```
 
 2. **Start Frontend**
+
    ```bash
    cd FrontEnd/RankingPage
    npm start
