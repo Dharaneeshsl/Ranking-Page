@@ -65,24 +65,7 @@ A full-stack application for managing and displaying member rankings and contrib
    npm install
    ```
 
-## Environment Variables
 
-Create a `.env` file in the BackEnd directory with the following variables:
-
-```env
-# Application
-ENVIRONMENT=development
-SECRET_KEY=your-secret-key
-
-# Database
-MONGODB_URI=mongodb://localhost:27017
-DATABASE_NAME=ranking_db
-
-# Admin User
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=securepassword123
-ADMIN_NAME="Admin User"
-```
 
 ## 🚀 Running Locally
 
@@ -111,6 +94,7 @@ docker-compose up --build
 ## 🌐 API Documentation
 
 Once the backend is running, access the API documentation at:
+
 - Swagger UI: `http://localhost:8000/api/docs`
 - ReDoc: `http://localhost:8000/api/redoc`
 
