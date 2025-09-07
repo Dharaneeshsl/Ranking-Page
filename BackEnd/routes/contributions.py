@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from datetime import datetime
 from typing import Dict, Any
 import logging
+from bson import ObjectId
 
 from ..database import members_collection
 from ..models import ActionType, ContributionBase, BadgeType
