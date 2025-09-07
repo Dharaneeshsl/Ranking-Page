@@ -7,6 +7,8 @@ from bson import ObjectId
 import bcrypt
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
+from datetime import datetime
+from .models.user import UserInDB
 
 # Configure structured logging
 logging.basicConfig(

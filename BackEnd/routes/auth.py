@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import json
 
 from ..database import authenticate_user, get_user_by_email
-from ..middleware.auth_middleware import session_manager, APIError, require_auth, require_role
+from ..middleware.auth_middleware import APIError, require_auth, require_role
 from ..models.user import UserResponse
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
@@ -25,28 +25,25 @@ async def login(request: Request, response: Response, login_data: LoginRequest):
     user = await authenticate_user(login_data.email, login_data.password)
     if not user:
         raise APIError(status_code=401, message="Invalid email or password")
-    
-    # Create session
-    session_id, session_data = session_manager.create_session({
+
+    # Store user info in request.session (fastapi_session)
+    request.session["user"] = {
         "id": str(user.id),
         "email": user.email,
         "role": user.role,
         "name": user.name
-    })
-    
-    # Store session
-    request.session[session_id] = session_data
-    
-    # Set session cookie
+    }
+
+    # Set session cookie (fastapi_session handles this automatically)
     response.set_cookie(
         key="session_id",
-        value=session_id,
+        value=request.cookies.get("session_id", ""),
         httponly=True,
         max_age=86400 if login_data.remember_me else None,  # 24 hours if remember me
         samesite="lax",
         secure=False  # Set to True in production with HTTPS
     )
-    
+
     return {
         "status": "success",
         "message": "Login successful",
@@ -56,13 +53,12 @@ async def login(request: Request, response: Response, login_data: LoginRequest):
 @router.post("/logout")
 async def logout(request: Request, response: Response):
     """Log out the current user"""
-    session_id = request.cookies.get("session_id")
-    if session_id and session_id in request.session:
-        del request.session[session_id]
-    
+    if "user" in request.session:
+        del request.session["user"]
+
     # Clear session cookie
     response.delete_cookie("session_id")
-    
+
     return {"status": "success", "message": "Logged out successfully"}
 
 @router.get("/me", response_model=UserResponse)

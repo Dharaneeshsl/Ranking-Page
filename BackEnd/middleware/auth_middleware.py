@@ -1,68 +1,42 @@
-import os
-from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any, List, Optional
 from fastapi import Request, Depends, HTTPException, status
+import os
+import logging
 import secrets
+from datetime import datetime, timedelta
+from motor.motor_asyncio import AsyncIOMotorCollection
 
-# Load environment variables
-from dotenv import load_dotenv
-load_dotenv()
+from ..database import db
 
-# Session configuration
-SESSION_EXPIRE_MINUTES = int(os.getenv("SESSION_EXPIRE_MINUTES", "1440"))  # 24 hours by default
+logger = logging.getLogger(__name__)
 
-class SessionManager:
-    def __init__(self):
-        self.sessions = {}
-        self.secret_key = SECRET_KEY
+REQUIRED_ENV_VARS = [
+    "SECRET_KEY",
+    "MONGODB_URI",
+    "DATABASE_NAME",
+    "ADMIN_EMAIL",
+    "ADMIN_PASSWORD",
+]
 
-    def create_session(self, user_data: Dict[str, Any]) -> str:
-        """Create a new session and return session ID"""
-        session_id = secrets.token_urlsafe(32)
-        expires = datetime.utcnow() + timedelta(minutes=SESSION_EXPIRE_MINUTES)
-        
-        self.sessions[session_id] = {
-            "user": user_data,
-            "expires": expires.isoformat(),
-            "created_at": datetime.utcnow().isoformat(),
-            "last_activity": datetime.utcnow().isoformat()
-        }
-        return session_id
+# Set default values for development environment
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
+if ENVIRONMENT == "development":
+    os.environ.setdefault("SECRET_KEY", "dev-secret-key-change-in-production")
+    os.environ.setdefault("MONGODB_URI", "mongodb://localhost:27017")
+    os.environ.setdefault("DATABASE_NAME", "ranking_page_dev")
+    os.environ.setdefault("ADMIN_EMAIL", "admin@example.com")
+    os.environ.setdefault("ADMIN_PASSWORD", "admin123")
 
-    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Get session data if valid"""
-        if not session_id or session_id not in self.sessions:
-            return None
-            
-        session = self.sessions[session_id]
-        if datetime.fromisoformat(session["expires"]) < datetime.utcnow():
-            self.delete_session(session_id)
-            return None
-            
-        # Update last activity
-        session["last_activity"] = datetime.utcnow().isoformat()
-        return session["user"]
+missing_vars = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
+if missing_vars:
+    error_msg = f"Missing required environment variables: {', '.join(missing_vars)}"
+    logger.critical(error_msg)
+    raise RuntimeError(error_msg)
 
-    def delete_session(self, session_id: str) -> bool:
-        """Delete a session"""
-        if session_id in self.sessions:
-            del self.sessions[session_id]
-            return True
-        return False
+# MongoDB collection for sessions
+sessions_collection: AsyncIOMotorCollection = db.sessions
 
-    def cleanup_expired_sessions(self):
-        """Remove expired sessions"""
-        current_time = datetime.utcnow()
-        expired = [
-            sid for sid, session in self.sessions.items()
-            if datetime.fromisoformat(session["expires"]) < current_time
-        ]
-        for sid in expired:
-            del self.sessions[sid]
-        return len(expired)
-
-# Initialize session manager
-session_manager = SessionManager()
+SESSION_EXPIRE_MINUTES = int(os.getenv("SESSION_EXPIRE_MINUTES", "1440"))  # 24 hours default
 
 class APIError(HTTPException):
     """Base API Error"""
@@ -82,16 +56,52 @@ class ForbiddenError(APIError):
     def __init__(self, message: str = "Insufficient permissions"):
         super().__init__(status.HTTP_403_FORBIDDEN, message)
 
+class SessionManager:
+    def __init__(self, collection: AsyncIOMotorCollection):
+        self.collection = collection
+        self.expire_minutes = SESSION_EXPIRE_MINUTES
+
+    async def create_session(self, user_data: Dict[str, Any]) -> str:
+        session_id = secrets.token_urlsafe(32)
+        now = datetime.utcnow()
+        expires_at = now + timedelta(minutes=self.expire_minutes)
+        session_doc = {
+            "_id": session_id,
+            "user": user_data,
+            "created_at": now,
+            "expires_at": expires_at,
+        }
+        await self.collection.insert_one(session_doc)
+        return session_id
+
+    async def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        if not session_id:
+            return None
+        session_doc = await self.collection.find_one({"_id": session_id})
+        if not session_doc:
+            return None
+        if session_doc["expires_at"] < datetime.utcnow():
+            await self.delete_session(session_id)
+            return None
+        return session_doc["user"]
+
+    async def delete_session(self, session_id: str) -> bool:
+        result = await self.collection.delete_one({"_id": session_id})
+        return result.deleted_count > 0
+
+    async def cleanup_expired_sessions(self) -> int:
+        result = await self.collection.delete_many({"expires_at": {"$lt": datetime.utcnow()}})
+        return result.deleted_count
+
+session_manager = SessionManager(sessions_collection)
+
 async def get_current_user(request: Request) -> Dict[str, Any]:
-    """Get current user from session cookie"""
     session_id = request.cookies.get("session_id")
     if not session_id:
         raise AuthError("No session found")
-    
-    user = session_manager.get_session(session_id)
+    user = await session_manager.get_session(session_id)
     if not user:
         raise AuthError("Session expired or invalid")
-        
     return user
 
 def require_auth(roles: List[str] = None):

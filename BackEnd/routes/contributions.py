@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, status, Depends
-from bson import ObjectId
+
 from datetime import datetime
 from typing import Dict, Any
 import logging
@@ -7,10 +7,10 @@ import logging
 from ..database import members_collection
 from ..models import ActionType, ContributionBase, BadgeType
 from ..utils import get_badges, compute_level, BADGE_THRESHOLDS
+from ..middleware.auth_middleware import require_auth
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
 async def update_member_points(member_id: str, contribution: Dict[str, Any]):
     """Update member's points, level, and badges based on new contribution"""
     # Get current member data
@@ -28,13 +28,13 @@ async def update_member_points(member_id: str, contribution: Dict[str, Any]):
     
     # Update badges
     current_badges = set(member.get('badges', []))
-    
-    # Level-based badges
+
+    # Level-based badges (award all deserved badges)
     if new_points >= BADGE_THRESHOLDS[BadgeType.PLATINUM]:
         current_badges.add(BadgeType.PLATINUM.value)
-    elif new_points >= BADGE_THRESHOLDS[BadgeType.GOLD]:
+    if new_points >= BADGE_THRESHOLDS[BadgeType.GOLD]:
         current_badges.add(BadgeType.GOLD.value)
-    elif new_points >= BADGE_THRESHOLDS[BadgeType.SILVER]:
+    if new_points >= BADGE_THRESHOLDS[BadgeType.SILVER]:
         current_badges.add(BadgeType.SILVER.value)
     
     # Special badges
@@ -73,8 +73,21 @@ async def update_member_points(member_id: str, contribution: Dict[str, Any]):
     }
 
 @router.post("/members/{member_id}/contributions")
-async def add_contribution(member_id: str, contribution_data: Dict[str, Any]):
+async def add_contribution(
+    member_id: str,
+    contribution_data: Dict[str, Any],
+    user: dict = Depends(require_auth())
+):
     try:
+        # Validate MongoDB ObjectId
+        try:
+            ObjectId(member_id)
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid member ID format"
+            )
+
         # Validate action type
         try:
             action = ActionType(contribution_data['action'])
@@ -84,13 +97,26 @@ async def add_contribution(member_id: str, contribution_data: Dict[str, Any]):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid action type. Must be one of: {[e.value for e in ActionType]}"
             )
-        
-        # Create contribution with automatic points calculation
+
+        # Ensure points are provided and valid
+        if 'points' not in contribution_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Points must be provided in contribution data"
+            )
+
+        if not isinstance(contribution_data['points'], (int, float)) or contribution_data['points'] < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Points must be a non-negative number"
+            )
+
+        # Create contribution with validated data
         contribution = ContributionBase(**contribution_data).dict()
-        
+
         # Update member points and get result
         result = await update_member_points(member_id, contribution)
-        
+
         return {
             "status": "success",
             "data": {
@@ -98,10 +124,12 @@ async def add_contribution(member_id: str, contribution_data: Dict[str, Any]):
                 **result
             }
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error adding contribution: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error while adding contribution"
         )
