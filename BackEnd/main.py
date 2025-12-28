@@ -54,4 +54,6 @@ async def health():
 app.include_router(api_router, prefix="/api")
 
 if __name__ == "__main__":
+    # Run from BackEnd directory: uvicorn main:app --reload
+    # Or run this file directly: python main.py
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=DEBUG)

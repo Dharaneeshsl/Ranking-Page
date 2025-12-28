@@ -39,8 +39,8 @@ async def update_member_points(member_id: str, contribution: Dict[str, Any]):
         current_badges.add(BadgeType.SILVER.value)
     
     # Special badges
-    event_lead_count = sum(1 for c in contributions if c.get("action") == ActionType.LEAD_EVENT)
-    sponsorship_count = sum(1 for c in contributions if c.get("action") == ActionType.BRING_SPONSORSHIP)
+    event_lead_count = sum(1 for c in contributions if c.get("action") == ActionType.LEAD_EVENT.value or c.get("action") == ActionType.LEAD_EVENT)
+    sponsorship_count = sum(1 for c in contributions if c.get("action") == ActionType.BRING_SPONSORSHIP.value or c.get("action") == ActionType.BRING_SPONSORSHIP)
     
     if event_lead_count >= BADGE_THRESHOLDS[BadgeType.EVENT_ORGANIZER]:
         current_badges.add(BadgeType.EVENT_ORGANIZER.value)

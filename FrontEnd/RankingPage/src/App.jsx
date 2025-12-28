@@ -3,6 +3,7 @@ import axios from 'axios';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { Container, Form, Button, Table, Row, Col, Modal } from 'react-bootstrap';
 import ElectricBorder from './ElectricBorder';
+import './App.css';
 
 const API_BASE_URL = 'http://localhost:8000/api';
 
