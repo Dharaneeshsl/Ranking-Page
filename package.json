@@ -1,4 +1,13 @@
 {
+  "name": "ranking-platform",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Production-ready gamified ranking platform (FastAPI + React)",
+  "scripts": {
+    "frontend:dev": "npm --prefix FrontEnd/RankingPage run dev",
+    "frontend:build": "npm --prefix FrontEnd/RankingPage run build",
+    "frontend:lint": "npm --prefix FrontEnd/RankingPage run lint"
+  },
   "dependencies": {
     "motion": "^12.23.12"
   }
