@@ -1,79 +1,99 @@
-from fastapi import APIRouter, Request, Response, Depends, HTTPException, status
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, EmailStr
-from typing import Optional
-from datetime import datetime, timedelta
-import json
+"""Authentication endpoints (login / logout / me / check)."""
 
-from ..database import authenticate_user, get_user_by_email
-from ..middleware.auth_middleware import APIError, require_auth, require_role
-from ..models.user import UserResponse
+from __future__ import annotations
 
-router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+import logging
 
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-    remember_me: bool = False
+from fastapi import APIRouter, Depends, Request, Response
 
-@router.post("/login")
-async def login(request: Request, response: Response, login_data: LoginRequest):
-    """
-    User login with email and password
-    """
-    # Authenticate user
-    user = await authenticate_user(login_data.email, login_data.password)
+import database
+from middleware.auth_middleware import (
+    APIError,
+    clear_session_cookie,
+    get_current_session,
+    set_session_cookie,
+    public_user_dict,
+    session_manager,
+)
+from models.user import (
+    CheckResponse,
+    LoginRequest,
+    LoginResponse,
+    UserResponse,
+)
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="", tags=["Authentication"])
+
+
+@router.post("/login", response_model=LoginResponse)
+async def login(request: Request, response: Response, body: LoginRequest):
+    """Authenticate with email/password; creates a server-side session."""
+    user = await database.authenticate_user(body.email, body.password)
     if not user:
-        raise APIError(status_code=401, message="Invalid email or password")
+        raise APIError(401, "Invalid email or password")
 
-    # Store user info in request.session (fastapi_session)
-    request.session["user"] = {
-        "id": str(user.id),
-        "email": user.email,
-        "role": user.role,
-        "name": user.name
-    }
-
-    # Set session cookie (fastapi_session handles this automatically)
-    response.set_cookie(
-        key="session_id",
-        value=request.cookies.get("session_id", ""),
-        httponly=True,
-        max_age=86400 if login_data.remember_me else None,  # 24 hours if remember me
-        samesite="lax",
-        secure=False  # Set to True in production with HTTPS
+    session_id, csrf_token = await session_manager.create_session(
+        {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "role": user.role.value,
+        },
+        remember=body.remember_me,
+        request=request,
+    )
+    set_session_cookie(response, session_id, remember=body.remember_me)
+    logger.info("Login success: %s", user.email)
+    return LoginResponse(
+        status="success",
+        message="Login successful",
+        user=UserResponse(**public_user_dict(user)),
+        csrf_token=csrf_token,
     )
 
-    return {
-        "status": "success",
-        "message": "Login successful",
-        "user": UserResponse(**user.dict()).dict()
-    }
 
 @router.post("/logout")
-async def logout(request: Request, response: Response):
-    """Log out the current user"""
-    if "user" in request.session:
-        del request.session["user"]
-
-    # Clear session cookie
-    response.delete_cookie("session_id")
-
+async def logout(
+    request: Request,
+    response: Response,
+    session=Depends(get_current_session),
+):
+    """Invalidate the session and clear the cookie."""
+    session_id = request.cookies.get("session_id")
+    await session_manager.delete_session(session_id or "")
+    clear_session_cookie(response)
     return {"status": "success", "message": "Logged out successfully"}
 
-@router.get("/me", response_model=UserResponse)
-async def get_current_user(user: dict = Depends(require_auth())):
-    """Get current user information"""
-    db_user = await get_user_by_email(user["email"])
-    if not db_user:
-        raise APIError(status_code=404, message="User not found")
-    return UserResponse(**db_user.dict())
 
-@router.get("/check")
-async def check_auth_status(user: dict = Depends(require_auth())):
-    """Check if user is authenticated"""
-    return {
-        "status": "success",
-        "authenticated": True,
-        "user": user
-    }
+@router.get("/me", response_model=CheckResponse)
+async def me(request: Request, session=Depends(get_current_session)):
+    """Current user info plus the CSRF token for this session."""
+    user = session.get("user") or {}
+    db_user = await database.get_user_by_email(user.get("email", ""))
+    if not db_user:
+        raise APIError(404, "User not found")
+    return CheckResponse(
+        status="success",
+        authenticated=True,
+        user=UserResponse(**public_user_dict(db_user)),
+        csrf_token=session.get("csrf_token"),
+    )
+
+
+@router.get("/check", response_model=CheckResponse)
+async def check(request: Request):
+    """Lightweight auth probe; never raises - reports authenticated true/false."""
+    try:
+        session = await get_current_session(request)
+    except APIError:
+        return CheckResponse(status="success", authenticated=False)
+    user = session.get("user") or {}
+    db_user = await database.get_user_by_email(user.get("email", ""))
+    if not db_user:
+        return CheckResponse(status="success", authenticated=False)
+    return CheckResponse(
+        status="success",
+        authenticated=True,
+        user=UserResponse(**public_user_dict(db_user)),
+        csrf_token=session.get("csrf_token"),
+    )

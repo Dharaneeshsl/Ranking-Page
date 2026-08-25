@@ -1,113 +1,205 @@
 """
-Utility functions for the ranking system.
+Business logic helpers: levels, badges, member stats recomputation.
 """
-from enum import Enum
-from typing import List, Dict, Any
-from .database import members_collection
-from .models import BadgeType
 
-# Level thresholds
-LEVEL_THRESHOLDS = {
+from __future__ import annotations
+
+import logging
+import re
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+import database
+from models import ActionType, BadgeType, Contribution, action_label
+
+logger = logging.getLogger(__name__)
+
+# Level thresholds (points required to REACH the level)
+LEVEL_THRESHOLDS: dict[str, int] = {
     "Bronze": 0,
     "Silver": 51,
     "Gold": 151,
-    "Platinum": 301
+    "Platinum": 301,
 }
 
-# Badge thresholds
+LEVEL_ORDER = ["Bronze", "Silver", "Gold", "Platinum"]
+
 BADGE_THRESHOLDS = {
-    BadgeType.BRONZE: 0,
-    BadgeType.SILVER: 51,
-    BadgeType.GOLD: 151,
-    BadgeType.PLATINUM: 301,
-    BadgeType.EVENT_ORGANIZER: 5,  # 5 events led
-    BadgeType.SPONSORSHIP_CHAMPION: 3,  # 3 sponsorships
-    BadgeType.TOP_CONTRIBUTOR: 500  # 500+ points
+    BadgeType.SILVER: LEVEL_THRESHOLDS["Silver"],
+    BadgeType.GOLD: LEVEL_THRESHOLDS["Gold"],
+    BadgeType.PLATINUM: LEVEL_THRESHOLDS["Platinum"],
+    BadgeType.EVENT_ORGANIZER: 5,   # events led
+    BadgeType.SPONSORSHIP_CHAMPION: 3,  # sponsorships brought
+    BadgeType.TOP_CONTRIBUTOR: 500,  # 500+ points
 }
+
 
 def compute_level(points: int) -> str:
-    """
-    Calculate member level based on points.
-    
-    Args:
-        points: Total points accumulated
-        
-    Returns:
-        Level name (Bronze, Silver, Gold, Platinum)
-    """
+    """Return the level name for a point total."""
     if points >= LEVEL_THRESHOLDS["Platinum"]:
         return "Platinum"
-    elif points >= LEVEL_THRESHOLDS["Gold"]:
+    if points >= LEVEL_THRESHOLDS["Gold"]:
         return "Gold"
-    elif points >= LEVEL_THRESHOLDS["Silver"]:
+    if points >= LEVEL_THRESHOLDS["Silver"]:
         return "Silver"
-    else:
-        return "Bronze"
+    return "Bronze"
+
 
 def calculate_next_level_points(current_level: str) -> int:
-    """
-    Calculate points needed for next level.
-    
-    Args:
-        current_level: Current level name
-        
-    Returns:
-        Points threshold for next level
-    """
-    level_order = ["Bronze", "Silver", "Gold", "Platinum"]
+    """Threshold (points) of the next level; same as current for max level."""
     try:
-        current_index = level_order.index(current_level)
-        if current_index < len(level_order) - 1:
-            return LEVEL_THRESHOLDS[level_order[current_index + 1]]
-        return LEVEL_THRESHOLDS["Platinum"]  # Max level
+        idx = LEVEL_ORDER.index(current_level)
     except ValueError:
         return LEVEL_THRESHOLDS["Silver"]
+    if idx >= len(LEVEL_ORDER) - 1:
+        return LEVEL_THRESHOLDS["Platinum"]
+    return LEVEL_THRESHOLDS[LEVEL_ORDER[idx + 1]]
+
 
 def get_badges(points: int, contributions: List[Dict[str, Any]]) -> List[str]:
-    """
-    Calculate badges earned by a member.
-    
-    Args:
-        points: Total points
-        contributions: List of contribution documents
-        
-    Returns:
-        List of badge names
-    """
-    badges = []
-    
-    # Level-based badges
+    """Compute the full badge list for a member."""
+    badges: List[str] = []
     if points >= BADGE_THRESHOLDS[BadgeType.PLATINUM]:
         badges.append(BadgeType.PLATINUM.value)
     if points >= BADGE_THRESHOLDS[BadgeType.GOLD]:
         badges.append(BadgeType.GOLD.value)
     if points >= BADGE_THRESHOLDS[BadgeType.SILVER]:
         badges.append(BadgeType.SILVER.value)
-    
-    # Special badges
-    from .models import ActionType
-    event_lead_count = sum(1 for c in contributions if c.get("action") == ActionType.LEAD_EVENT.value or c.get("action") == ActionType.LEAD_EVENT)
-    sponsorship_count = sum(1 for c in contributions if c.get("action") == ActionType.BRING_SPONSORSHIP.value or c.get("action") == ActionType.BRING_SPONSORSHIP)
-    
-    if event_lead_count >= BADGE_THRESHOLDS[BadgeType.EVENT_ORGANIZER]:
+
+    event_count = sum(
+        1
+        for c in contributions
+        if str(c.get("action", "")) in (ActionType.LEAD_EVENT.value,)
+    )
+    sponsorship_count = sum(
+        1
+        for c in contributions
+        if str(c.get("action", "")) in (ActionType.BRING_SPONSORSHIP.value,)
+    )
+    if event_count >= BADGE_THRESHOLDS[BadgeType.EVENT_ORGANIZER]:
         badges.append(BadgeType.EVENT_ORGANIZER.value)
     if sponsorship_count >= BADGE_THRESHOLDS[BadgeType.SPONSORSHIP_CHAMPION]:
         badges.append(BadgeType.SPONSORSHIP_CHAMPION.value)
     if points >= BADGE_THRESHOLDS[BadgeType.TOP_CONTRIBUTOR]:
         badges.append(BadgeType.TOP_CONTRIBUTOR.value)
-    
     return badges
 
+
+def compute_member_stats(contributions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Derive points/level/badges purely from the contribution ledger.
+    Points are always the sum of the ledger, so history stays consistent.
+    """
+    points = sum(int(c.get("points", 0) or 0) for c in contributions)
+    return {
+        "points": points,
+        "level": compute_level(points),
+        "badges": get_badges(points, contributions),
+    }
+
+
+def progress_for(points: int, level: str) -> Dict[str, Any]:
+    """Progress info toward the next level: {next_level_points, points_to_next, progress}."""
+    next_level_points = calculate_next_level_points(level)
+    if level == "Platinum":
+        return {
+            "next_level_points": next_level_points,
+            "points_to_next": 0,
+            "progress": 100,
+            "maxed": True,
+        }
+    span = next_level_points - LEVEL_THRESHOLDS[level] if next_level_points > 0 else 1
+    within = max(0, points - LEVEL_THRESHOLDS[level])
+    progress = min(100, int(round(within * 100 / span)))
+    return {
+        "next_level_points": next_level_points,
+        "points_to_next": max(0, next_level_points - points),
+        "progress": progress,
+        "maxed": False,
+    }
+
+
+def make_contribution(
+    action: str,
+    points: int,
+    description: Optional[str] = None,
+    created_by: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Build a contribution dict (with _id + datetime timestamp) ready to store."""
+    from bson import ObjectId
+
+    doc = Contribution(
+        action=action,
+        points=points,
+        description=description
+        or (
+            action_label(action)
+            if action != "manual_adjustment"
+            else None
+        ),
+        timestamp=datetime.utcnow(),
+        created_by=created_by,
+    ).model_dump()
+    doc["_id"] = ObjectId()
+    return doc
+
+
 async def get_member_rank(points: int) -> int:
-    """
-    Get rank of a member based on their points.
-    
-    Args:
-        points: Member's total points
-        
-    Returns:
-        Rank (1-based)
-    """
-    count = await members_collection.count_documents({"points": {"$gt": points}})
+    """1-based rank: how many members have strictly more points."""
+    count = await database.members_collection.count_documents(
+        {"points": {"$gt": points}}
+    )
     return count + 1
 
+
+async def recalc_member(member_id: str, admin_email: Optional[str] = None) -> dict:
+    """
+    Recompute points/level/badges for a member from its contribution ledger
+    and persist the result. Returns a snapshot of the updated member.
+    """
+    from bson import ObjectId
+
+    member = await database.members_collection.find_one({"_id": ObjectId(member_id)})
+    if not member:
+        return None
+    contributions = member.get("contributions", []) or []
+    stats = compute_member_stats(contributions)
+    await database.members_collection.update_one(
+        {"_id": ObjectId(member_id)},
+        {
+            "$set": {
+                "points": stats["points"],
+                "level": stats["level"],
+                "badges": stats["badges"],
+                "last_active": datetime.utcnow(),
+                "updated_at": datetime.utcnow(),
+            }
+        },
+    )
+    member.update(stats)
+    member["last_active"] = datetime.utcnow()
+    return member
+
+
+async def find_member_by_name(name: str) -> Optional[dict]:
+    """Case-insensitive exact-name lookup."""
+    pattern = re.compile(rf"^{re.escape(name.strip())}$", re.IGNORECASE)
+    return await database.members_collection.find_one({"name": pattern})
+
+
+def serialize_member_dict(doc: dict, with_contributions: bool = False) -> dict:
+    """Convert a stored member doc into an API-safe dict."""
+    members_collection = database.members_collection  # noqa: F841 (kept for clarity)
+    data = {
+        "id": str(doc["_id"]),
+        "member_id": str(doc["_id"]),
+        "name": doc.get("name", ""),
+        "email": doc.get("email"),
+        "points": doc.get("points", 0),
+        "level": doc.get("level", "Bronze"),
+        "badges": doc.get("badges", []),
+        "total_contributions": len(doc.get("contributions", []) or []),
+        "last_active": doc.get("last_active"),
+        "created_at": doc.get("created_at"),
+    }
+    return data

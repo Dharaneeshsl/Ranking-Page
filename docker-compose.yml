@@ -1,57 +1,91 @@
-version: '3.8'
+name: ranking-platform
 
 services:
-  app:
-    build: .
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    environment:
-      - ENVIRONMENT=production
-      - MONGODB_URI=mongodb://mongo:27017
-      - DATABASE_NAME=ranking_db
-      - SECRET_KEY=${SECRET_KEY}
-      - ADMIN_EMAIL=${ADMIN_EMAIL}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - ADMIN_NAME="Admin User"
-    depends_on:
-      - mongo
-    networks:
-      - app-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
+  # ------------------------------------------------------------------ MongoDB
   mongo:
     image: mongo:6.0
-    restart: always
+    restart: unless-stopped
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?Set in .env}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
     volumes:
       - mongodb_data:/data/db
     networks:
       - app-network
     healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      test: ["CMD-SHELL", "mongosh --quiet --host 127.0.0.1 --username \"$$MONGO_INITDB_ROOT_USERNAME\" --password \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  # -------------------------------------------------------------- FastAPI app
+  backend:
+    build:
+      context: .
+      target: backend
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: production
+      SECRET_KEY: ${SECRET_KEY:?Set in .env}
+      MONGODB_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/${DATABASE_NAME:-ranking_db}?authSource=admin
+      DATABASE_NAME: ${DATABASE_NAME:-ranking_db}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Set in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ADMIN_NAME: ${ADMIN_NAME:-Admin User}
+      FRONTEND_URLS: ${FRONTEND_URLS:-http://localhost:8080}
+      COOKIE_SECURE: ${COOKIE_SECURE:-0}          # set 1 when served behind HTTPS
+      SESSION_EXPIRE_MINUTES: ${SESSION_EXPIRE_MINUTES:-1440}
+      SESSION_REMEMBER_MINUTES: ${SESSION_REMEMBER_MINUTES:-43200}
+      RATE_LIMIT_LOGIN_PER_MINUTE: ${RATE_LIMIT_LOGIN_PER_MINUTE:-10}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-300}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5).status==200 else 1)"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 15s
 
-  # Optional: MongoDB Web UI (http://localhost:8081)
+  # ------------------------------------------------- nginx (React frontend)
+  frontend:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  # ------------------------------------------------- Optional DB admin UI
   mongo-express:
     image: mongo-express:1.0
-    restart: always
+    restart: unless-stopped
+    profiles: ["tools"]
     ports:
       - "8081:8081"
     environment:
       ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_INITDB_ROOT_USERNAME}
       ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
       ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USER}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD}
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
     networks:
       - app-network
 

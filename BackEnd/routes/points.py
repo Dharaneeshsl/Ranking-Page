@@ -1,126 +1,100 @@
-"""
-Points route - handles adding points by name (creates member if doesn't exist)
-"""
-from fastapi import APIRouter, HTTPException, status
-from ..database import members_collection
-from ..models import ActionType, ACTION_POINTS, ContributionBase
-from ..utils import compute_level, get_badges
-from bson import ObjectId
-from datetime import datetime
-from pydantic import BaseModel
+"""Points route: add points by member name (auto-creates the member)."""
+
+from __future__ import annotations
+
 import logging
+from datetime import datetime
+
+from bson import ObjectId
+from fastapi import APIRouter, Depends, HTTPException, status
+
+import database
+from middleware.auth_middleware import require_auth
+from models import ACTION_POINTS, PointsRequest
+from utils import (
+    compute_member_stats,
+    find_member_by_name,
+    make_contribution,
+    progress_for,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-class PointsRequest(BaseModel):
-    name: str
-    action: str
 
 @router.post("/points")
-async def add_points(request: PointsRequest):
+async def add_points(body: PointsRequest, user: dict = Depends(require_auth())):
     """
-    Add points to a member by name. Creates member if they don't exist.
-    This is the endpoint the frontend uses for the simple "Add Points" form.
+    Award points for an action to a member (created on the fly).
+    Points are always derived server-side from the action type.
     """
     try:
-        # Validate action type
-        try:
-            action_type = ActionType(request.action)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid action type. Must be one of: {[e.value for e in ActionType]}"
-            )
-        
-        # Get points for this action
-        points = ACTION_POINTS[action_type]
-        
-        # Find or create member
-        member = await members_collection.find_one({"name": request.name.strip()})
-        
+        points = ACTION_POINTS[body.action]
+        created_by = user.get("email", "admin")
+        member = await find_member_by_name(body.name)
+
         if not member:
-            # Create new member
-            new_points = points
-            new_level = compute_level(new_points)
-            contribution = ContributionBase(
-                action=action_type,
-                points=points,
-                timestamp=datetime.utcnow()
-            ).dict()
-            
-            new_member = {
-                "name": request.name.strip(),
-                "points": new_points,
-                "level": new_level,
-                "contributions": [contribution],
-                "badges": get_badges(new_points, [contribution]),
-                "created_at": datetime.utcnow(),
-                "last_active": datetime.utcnow()
-            }
-            
-            result = await members_collection.insert_one(new_member)
-            member_id = str(result.inserted_id)
-            
-            return {
-                "status": "success",
-                "message": f"Created new member and added {points} points",
-                "data": {
-                    "member_id": member_id,
-                    "name": request.name.strip(),
-                    "points_added": points,
-                    "total_points": new_points,
-                    "level": new_level
-                }
-            }
-        else:
-            # Update existing member
-            member_id = str(member["_id"])
-            current_points = member.get("points", 0)
-            new_points = current_points + points
-            new_level = compute_level(new_points)
-            
-            contribution = ContributionBase(
-                action=action_type,
-                points=points,
-                timestamp=datetime.utcnow()
-            ).dict()
-            
-            contributions = member.get("contributions", [])
-            contributions.append(contribution)
-            
-            # Update badges
-            new_badges = get_badges(new_points, contributions)
-            
-            await members_collection.update_one(
-                {"_id": ObjectId(member_id)},
-                {"$set": {
-                    "points": new_points,
-                    "level": new_level,
-                    "contributions": contributions,
-                    "badges": new_badges,
-                    "last_active": datetime.utcnow()
-                }}
+            contribution = make_contribution(
+                body.action.value, points, body.description, created_by
             )
-            
-            return {
-                "status": "success",
-                "message": f"Added {points} points to member",
-                "data": {
-                    "member_id": member_id,
-                    "name": request.name.strip(),
-                    "points_added": points,
-                    "total_points": new_points,
-                    "level": new_level
-                }
+            stats = compute_member_stats([contribution])
+            now = datetime.utcnow()
+            new_member = {
+                "name": body.name,
+                "email": None,
+                "points": stats["points"],
+                "level": stats["level"],
+                "badges": stats["badges"],
+                "contributions": [contribution],
+                "created_at": now,
+                "updated_at": now,
+                "last_active": now,
             }
-            
+            result = await database.members_collection.insert_one(new_member)
+            member_id = str(result.inserted_id)
+            message = f"Created member and awarded {points} points"
+        else:
+            member_id = str(member["_id"])
+            contributions = member.get("contributions", []) or []
+            contributions.append(
+                make_contribution(body.action.value, points, body.description, created_by)
+            )
+            stats = compute_member_stats(contributions)
+            now = datetime.utcnow()
+            await database.members_collection.update_one(
+                {"_id": ObjectId(member_id)},
+                {
+                    "$set": {
+                        "points": stats["points"],
+                        "level": stats["level"],
+                        "badges": stats["badges"],
+                        "contributions": contributions,
+                        "last_active": now,
+                        "updated_at": now,
+                    }
+                },
+            )
+            message = f"Awarded {points} points to {member['name']}"
+
+        total = stats["points"]
+        return {
+            "status": "success",
+            "message": message,
+            "data": {
+                "member_id": member_id,
+                "name": body.name,
+                "points_added": points,
+                "total_points": total,
+                "level": stats["level"],
+                "badges": stats["badges"],
+                **progress_for(total, stats["level"]),
+            },
+        }
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error adding points: {str(e)}")
+    except Exception as exc:
+        logger.exception("add_points failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
-        )
-
+            detail="Internal server error while awarding points",
+        ) from exc

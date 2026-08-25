@@ -1,30 +1,43 @@
-# Edit your root .gitignore file and make sure it contains:
+# --- Environment / secrets ------------------------------------------------
+.env
+.env.local
+.env.*
+!.env.example
+
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+BackEnd/env/
+BackEnd/venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# --- Node ------------------------------------------------------------------
 node_modules/
 dist/
-build/
+.vite/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.eslintcache
 
-# Python virtual environment
-BackEnd/env/
-BackEnd/venv/
-Include/
-Lib/
-Scripts/
-pyvenv.cfg
-
-# Environment variables
-.env
-.env.local
-
-# IDE files
+# --- IDE / OS --------------------------------------------------------------
 .vscode/
 .idea/
-
-# OS files
+*.swp
+*.swo
 .DS_Store
 Thumbs.db
 
-# ESLint cache
-.eslintcache
+# --- Logs / local data -----------------------------------------------------
+logs/
+*.log
+*.sqlite3
